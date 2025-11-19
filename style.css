@@ -68,6 +68,17 @@ button:hover {
     font-size: 12px;
 }
 
+.input-row.error {
+    border-color: #d9534f;
+    background-color: #ffe6e6;
+}
+
+.input-row .error-message {
+    color: #d9534f;
+    font-size: 11px;
+    flex-basis: 100%;
+}
+
 .input-row input,
 .input-row select {
     flex: 1;
