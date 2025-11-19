@@ -14,17 +14,34 @@ function initializeProfessionals() {
 // Genera la programmazione degli attori
 function generateSchedule() {
     console.log("Inizio generazione della programmazione...");
-    const scheduleTableBody = document.getElementById("scheduleTableBody");
-    scheduleTableBody.innerHTML = ""; // Pulisce la tabella di schedulazione
-
     const rows = document.querySelectorAll("#actorRows .input-row");
-    actors.length = 0; // Resetta gli attori
+    let hasValidationError = false;
+    const newActors = [];
 
     rows.forEach(row => {
+        row.classList.remove('error');
+        const existingError = row.querySelector('.error-message');
+        if (existingError) {
+            existingError.remove();
+        }
+
         const inputs = row.querySelectorAll("input");
+        const actorName = inputs[0].value.trim();
+        const readyTime = inputs[1].value;
+
+        if (!actorName || !readyTime) {
+            hasValidationError = true;
+            row.classList.add('error');
+            const errorMessage = document.createElement('span');
+            errorMessage.classList.add('error-message');
+            errorMessage.textContent = 'Compila nome attore e orario di pronti.';
+            row.appendChild(errorMessage);
+            return;
+        }
+
         const actor = {
-            name: inputs[0].value.trim(),
-            readyTime: inputs[1].value,
+            name: actorName,
+            readyTime,
             tasks: [],
             schedule: [],
             scheduleInfo: {},
@@ -39,9 +56,9 @@ function generateSchedule() {
         };
 
         // Durate dei task (trucco, capelli, costumi)
-        const makeupDuration = parseInt(inputs[2].value);
-        const hairDuration = parseInt(inputs[3].value);
-        const costumeDuration = parseInt(inputs[4].value);
+        const makeupDuration = parseInt(inputs[2].value, 10) || 0;
+        const hairDuration = parseInt(inputs[3].value, 10) || 0;
+        const costumeDuration = parseInt(inputs[4].value, 10) || 0;
 
         if (makeupDuration > 0) {
             actor.tasks.push({ type: 'trucco', duration: makeupDuration, actorName: actor.name });
@@ -54,8 +71,19 @@ function generateSchedule() {
         }
 
         console.log(`Attore aggiunto: ${actor.name}`, actor.tasks);
-        actors.push(actor);
+        newActors.push(actor);
     });
+
+    if (hasValidationError) {
+        console.warn('Validazione fallita. Correggere gli errori prima di generare la programmazione.');
+        return;
+    }
+
+    const scheduleTableBody = document.getElementById("scheduleTableBody");
+    scheduleTableBody.innerHTML = ""; // Pulisce la tabella di schedulazione
+
+    actors.length = 0; // Resetta gli attori
+    newActors.forEach(actor => actors.push(actor));
 
     // Ordina gli attori in base all'orario di pronti
     actors.sort((a, b) => a.readyTime.localeCompare(b.readyTime));
