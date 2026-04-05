@@ -7,6 +7,11 @@ const professionalSettings = {  // Numero di professionisti per reparto
     capelli: { count: 1 },
     costumi: { count: 0 }
 };
+const departmentPriority = {
+    trucco: 1,
+    capelli: 2,
+    costumi: 3
+};
 
 let pixelsPerMinute = 5; // Scaling factor for zooming
 
@@ -36,6 +41,7 @@ function updateProfessionalSettings() {
             console.log(`Nomi troncati a ${professionalSettings[key].count} per ${key}:`, professionalNames[key]);
         }
     });
+    updateDepartmentPriorityFromInputs();
 
     initializeProfessionals();
     populateProfessionalOptionsForAll();
@@ -97,6 +103,7 @@ function addActorRow(data = {}) {
     row.innerHTML = `
         <input type="text" placeholder="Nome Attore" value="${data.name || ''}" />
         <input type="time" placeholder="Orario di Pronti" value="${data.readyTime || ''}" />
+        <input type="number" placeholder="Priorità Attore" value="${data.priority ?? 1}" min="1" />
         <input type="number" placeholder="Durata Trucco (min)" value="${data.makeupDuration || ''}" min="0" />
         <select class="makeup-artist-select">
             <option value="">Qualsiasi</option>
@@ -204,5 +211,132 @@ function updateAllSchedules() {
     actors.forEach(actor => updateActorSchedule(actor));
 }
 
+function updateDepartmentPriorityFromInputs() {
+    const usedValues = new Set();
+    ['trucco', 'capelli', 'costumi'].forEach(dept => {
+        const value = parseInt(document.getElementById(`${dept}-priority`).value, 10);
+        departmentPriority[dept] = Number.isFinite(value) ? value : 3;
+        usedValues.add(departmentPriority[dept]);
+    });
+
+    if (usedValues.size < 3) {
+        alert('Le priorità dei reparti devono essere univoche (1, 2, 3).');
+        let fallback = 1;
+        ['trucco', 'capelli', 'costumi'].forEach(dept => {
+            departmentPriority[dept] = fallback;
+            document.getElementById(`${dept}-priority`).value = fallback;
+            fallback++;
+        });
+    }
+}
+
+function actorToExportRow(row) {
+    const inputs = row.querySelectorAll('input');
+    return {
+        Nome: inputs[0].value.trim(),
+        OrarioPronti: inputs[1].value,
+        PrioritaAttore: parseInt(inputs[2].value, 10) || 1,
+        DurataTrucco: parseInt(inputs[3].value, 10) || 0,
+        ProfessionistaTrucco: row.querySelector('.makeup-artist-select').value,
+        DurataCapelli: parseInt(inputs[4].value, 10) || 0,
+        ProfessionistaCapelli: row.querySelector('.hairdresser-select').value,
+        DurataCostumi: parseInt(inputs[5].value, 10) || 0
+    };
+}
+
+function deptToExportRows() {
+    return [
+        {
+            Reparto: 'trucco',
+            NumeroProfessionisti: professionalSettings.trucco.count,
+            NomiProfessionisti: professionalNames.trucco.join(', '),
+            Priorita: departmentPriority.trucco
+        },
+        {
+            Reparto: 'capelli',
+            NumeroProfessionisti: professionalSettings.capelli.count,
+            NomiProfessionisti: professionalNames.capelli.join(', '),
+            Priorita: departmentPriority.capelli
+        },
+        {
+            Reparto: 'costumi',
+            NumeroProfessionisti: professionalSettings.costumi.count,
+            NomiProfessionisti: '',
+            Priorita: departmentPriority.costumi
+        }
+    ];
+}
+
+function exportXls() {
+    const actorRows = document.querySelectorAll('#actorRows .input-row');
+    const actorData = Array.from(actorRows).map(actorToExportRow);
+    const deptData = deptToExportRows();
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(actorData), 'Actors');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(deptData), 'Depts');
+    XLSX.writeFile(workbook, 'flash_scheduler_export.xlsx');
+}
+
+function importXls(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const workbook = XLSX.read(e.target.result, { type: 'binary' });
+        const actorSheet = workbook.Sheets.Actors;
+        const deptsSheet = workbook.Sheets.Depts;
+
+        if (deptsSheet) {
+            const deptData = XLSX.utils.sheet_to_json(deptsSheet, { defval: '' });
+            deptData.forEach(row => {
+                const dept = String(row.Reparto || '').toLowerCase();
+                if (!professionalSettings[dept]) return;
+                const count = parseInt(row.NumeroProfessionisti, 10);
+                if (Number.isFinite(count)) {
+                    document.getElementById(`${dept}-count`).value = count;
+                }
+                if (dept !== 'costumi') {
+                    document.getElementById(`${dept}-names`).value = row.NomiProfessionisti || '';
+                }
+                const priority = parseInt(row.Priorita, 10);
+                if (Number.isFinite(priority)) {
+                    document.getElementById(`${dept}-priority`).value = priority;
+                }
+            });
+            updateProfessionalSettings();
+        }
+
+        if (actorSheet) {
+            const actorData = XLSX.utils.sheet_to_json(actorSheet, { defval: '' });
+            document.getElementById('actorRows').innerHTML = '';
+            actorData.forEach(row => {
+                addActorRow({
+                    name: row.Nome,
+                    readyTime: row.OrarioPronti,
+                    priority: parseInt(row.PrioritaAttore, 10) || 1,
+                    makeupDuration: parseInt(row.DurataTrucco, 10) || 0,
+                    hairDuration: parseInt(row.DurataCapelli, 10) || 0,
+                    costumeDuration: parseInt(row.DurataCostumi, 10) || 0
+                });
+
+                const actorRows = document.querySelectorAll('#actorRows .input-row');
+                const lastRow = actorRows[actorRows.length - 1];
+                if (row.ProfessionistaTrucco !== '') {
+                    lastRow.querySelector('.makeup-artist-select').value = String(row.ProfessionistaTrucco);
+                }
+                if (row.ProfessionistaCapelli !== '') {
+                    lastRow.querySelector('.hairdresser-select').value = String(row.ProfessionistaCapelli);
+                }
+            });
+        }
+
+        event.target.value = '';
+        alert('Import XLS completato.');
+    };
+
+    reader.readAsBinaryString(file);
+}
 
 
