@@ -42,6 +42,7 @@ function generateSchedule() {
         const actor = {
             name: actorName,
             readyTime,
+            priority: parseInt(inputs[2].value, 10) || 1,
             tasks: [],
             schedule: [],
             scheduleInfo: {},
@@ -56,9 +57,9 @@ function generateSchedule() {
         };
 
         // Durate dei task (trucco, capelli, costumi)
-        const makeupDuration = parseInt(inputs[2].value, 10) || 0;
-        const hairDuration = parseInt(inputs[3].value, 10) || 0;
-        const costumeDuration = parseInt(inputs[4].value, 10) || 0;
+        const makeupDuration = parseInt(inputs[3].value, 10) || 0;
+        const hairDuration = parseInt(inputs[4].value, 10) || 0;
+        const costumeDuration = parseInt(inputs[5].value, 10) || 0;
 
         if (makeupDuration > 0) {
             actor.tasks.push({ type: 'trucco', duration: makeupDuration, actorName: actor.name });
@@ -85,8 +86,11 @@ function generateSchedule() {
     actors.length = 0; // Resetta gli attori
     newActors.forEach(actor => actors.push(actor));
 
-    // Ordina gli attori in base all'orario di pronti
-    actors.sort((a, b) => a.readyTime.localeCompare(b.readyTime));
+    // Ordina gli attori in base alla priorità e poi all'orario di pronti
+    actors.sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return a.readyTime.localeCompare(b.readyTime);
+    });
     initializeProfessionals(); // Inizializza i professionisti per reparto
 
     // Procedura di schedulazione
@@ -124,7 +128,7 @@ function generateSchedule() {
 
 // Funzione per tentare di schedulare un attore
 function trySchedulingActor(actor) {
-    const permutations = generateTaskPermutations(actor.tasks);
+    const permutations = generateTaskPermutations(actor.tasks, departmentPriority);
 
     for (const taskOrder of permutations) {
         let tempProfessionals = JSON.parse(JSON.stringify(professionals));
@@ -330,16 +334,20 @@ function assignTaskToProfessional(task, startTime, endTime, tempProfessionals, p
 
 
 
-function generateTaskPermutations(tasks) {
+function generateTaskPermutations(tasks, priorityMap = {}) {
     if (tasks.length <= 1) return [tasks];
     const permutations = [];
     for (let i = 0; i < tasks.length; i++) {
         const task = tasks[i];
         const remainingTasks = tasks.slice(0, i).concat(tasks.slice(i + 1));
-        const remainingPermutations = generateTaskPermutations(remainingTasks);
+        const remainingPermutations = generateTaskPermutations(remainingTasks, priorityMap);
         for (const permutation of remainingPermutations) {
             permutations.push([task].concat(permutation));
         }
     }
-    return permutations;
+    return permutations.sort((a, b) => {
+        const scoreA = a.reduce((sum, task, index) => sum + ((priorityMap[task.type] || 99) * (index + 1)), 0);
+        const scoreB = b.reduce((sum, task, index) => sum + ((priorityMap[task.type] || 99) * (index + 1)), 0);
+        return scoreA - scoreB;
+    });
 }

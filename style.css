@@ -162,6 +162,12 @@ button:hover {
     border-radius: 3px;
 }
 
+.io-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 /* Pulsante di configurazione */
 #professionalSettings button {
     align-self: flex-start;
