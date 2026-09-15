@@ -1,0 +1,16 @@
+# Baseline audit (before refactoring)
+
+The repository at the starting commit consists of five files and has no tests or build tooling.
+
+- State: global actors, per-department reservation arrays, professional counts/names and priority map. Actor rows become domain data only when Generate is clicked. Tasks carry actor names and mutable professional indices.
+- Initialization: script.js immediately calls updateProfessionalSettings, which calls updateTimeline before timeline.js initializes its datasets. timeline.js also calls updateTimeline at module scope. This can abort initialization.
+- Automatic scheduling: actors sort by ascending priority, then READY, retaining input order on ties. Estimate arrival by READY minus total durations, rounded to nearest five; try up to 49 arrivals, each five minutes earlier. For each permutation, place tasks sequentially from that estimate. Each task searches backwards in five-minute steps until professional availability is found. Actor overlap rejects the candidate. Commit reservations only for a successful permutation. Thus this is READY-anchored backwards search, not a conventional latest-finish greedy scheduler.
+- Permutations: ascending sum(priority * (position + 1)); default 1/2/3 consequently tries Costume, Hair, Makeup first. Ties retain recursively generated order, starting from Makeup, Hair, Costume. Numeric priorities are preferences, never requirements.
+- Professionals: a zero count means unlimited capacity, including Makeup/Hair. Otherwise first available index wins. A selected 'preferred' index is required; there is no fallback. Availability mutates task.professionalIndex, then assignment repeats the same search.
+- Actor availability: no independent window; only READY and task non-overlap. Subtraction wraps midnight, comparisons use same-day clock values. The supported interpretation is a single calendar day; prior-day scheduling is not intentional functionality. Wrapped task ends can wrongly pass READY checks.
+- Arrival: initial estimate is not corrected when a task searches earlier. Manual edits recompute earliest task start, rounded. The requirement explicitly calls for the actual earliest task.
+- Timeline: name + department IDs; selection splits on hyphens, edits parse display content, duplicate names collide. Refresh appends another select listener. Manual changes update times/professional index without rescheduling; overlap detection checks only actors, not professionals. Cross-department moves are allowed but corrupt professional identity.
+- XLS: Actors and Depts sheets; Italian columns, zero-based professional indices, department priority numbers. Export reads DOM, import rebuilds DOM then restores selectors. No schedule/rules/IDs persisted. Actor names inserted as HTML.
+- CSS: small Tahoma interface, neutral boxes, blue/green/orange departments, yellow selection and red conflicts. Repeated settings declarations and unused chart styles.
+
+Tests retain the original three JS files as fixtures. They characterize clock arithmetic, ordering, sequential placement, reservations, preference-as-requirement, same-day failure and unlimited capacity before production code changes. Confirmed bugs are documented in README with regression coverage.

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flash SCHM · Programmazione reparti</title>
+  <link rel="stylesheet" href="https://unpkg.com/vis-timeline@7.7.3/styles/vis-timeline-graph2d.min.css" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Vai agli attori</a>
+  <header class="app-header">
+    <div class="brand"><span class="eyebrow">PRODUZIONE · PIANIFICAZIONE REPARTI</span><h1>Flash <span>SCHM</span></h1><p>Trucco, Capelli e Costumi. Tutti pronti al momento giusto.</p></div>
+    <div class="project-actions">
+      <div class="io-row"><label class="import-button" for="xlsImportInput">Importa XLS<input class="file-input" type="file" id="xlsImportInput" accept=".xls,.xlsx" /></label><button id="export" type="button">Esporta XLS</button></div>
+      <p id="ioStatus" role="status" aria-live="polite" aria-atomic="true">Progetto in memoria · esporta prima di chiudere.</p>
+    </div>
+  </header>
+  <main id="main">
+    <section class="panel actors-panel" aria-labelledby="actorsTitle">
+      <div class="section-header"><div><span class="eyebrow">01 / CONFIGURAZIONE</span><h2 id="actorsTitle">Attori <span id="actorCount" class="count">0</span></h2><p>Imposta l’orario READY e le durate. Con 0 minuti il reparto viene saltato.</p></div><button id="addActor" type="button">+ Aggiungi attore</button></div>
+      <div id="actorRows"></div>
+    </section>
+    <div class="configuration-grid">
+      <section class="panel" aria-labelledby="professionalsTitle"><details open><summary><h2 id="professionalsTitle">Professionisti</h2><span class="summary-hint">Capacità dei reparti</span></summary><p class="section-help">Aggiungi i professionisti per limitarne la disponibilità. Senza nomi, il reparto ha capacità libera.</p><div id="professionalSettings" class="professional-grid"></div></details></section>
+      <section class="panel" aria-labelledby="rulesTitle"><details><summary><h2 id="rulesTitle">Regole globali</h2><span class="summary-hint">Preferenze e vincoli</span></summary><p class="section-help">“Preferisci” ammette alternative. “Richiedi” impone un vincolo. Le regole si applicano a tutti gli attori, salvo eccezioni.</p><div id="globalRules"></div></details></section>
+    </div>
+    <div class="generation-bar"><div><strong>Pronto a organizzare la giornata?</strong><span>Generando sostituisci anche le modifiche manuali.</span></div><button id="generate" type="button" class="primary">Genera programmazione <span aria-hidden="true">→</span></button></div>
+    <section id="scheduleContainer" class="panel results-panel" aria-labelledby="scheduleTitle">
+      <div class="section-header"><div><span class="eyebrow">02 / PROGRAMMAZIONE</span><h2 id="scheduleTitle">Piano di lavoro</h2></div><div class="table-options" aria-label="Opzioni tabella"><label for="showStartEndCheckbox"><input type="checkbox" id="showStartEndCheckbox" /> Inizio e fine</label><label for="showProfessionalCheckbox"><input type="checkbox" id="showProfessionalCheckbox" /> Professionista assegnato</label></div></div>
+      <div id="diagnostics" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="table-scroll" role="region" aria-label="Tabella della programmazione, scorrimento orizzontale" tabindex="0"><table id="scheduleTable"><caption class="sr-only">Orari di arrivo, attività per reparto e READY per ogni attore</caption><thead><tr><th scope="col">Attore</th><th scope="col">Arrivo</th><th scope="col" class="department-trucco">Trucco</th><th scope="col" class="department-capelli">Capelli</th><th scope="col" class="department-costumi">Costumi</th><th scope="col">READY</th></tr></thead><tbody id="scheduleTableBody"></tbody></table></div>
+    </section>
+    <section class="panel timeline-panel" aria-labelledby="timelineTitle"><div class="section-header"><div><h2 id="timelineTitle">Timeline reparti</h2><p>Seleziona un’attività per evidenziare l’attore. Trascina o ridimensiona per modificare gli orari.</p></div><ul class="legend" aria-label="Legenda reparti"><li class="department-trucco">Trucco</li><li class="department-capelli">Capelli</li><li class="department-costumi">Costumi</li><li class="legend-conflict">! Conflitto</li></ul></div><details class="timeline-help"><summary>Comandi da tastiera</summary><p>Tab per raggiungere un’attività, Invio per evidenziare l’attore. ← / → sposta di 5 minuti; Maiusc + ← / → modifica la fine. ↑ / ↓ cambia professionista nello stesso reparto.</p></details><div id="visualization" role="region" aria-label="Timeline interattiva dei reparti"></div></section>
+    <footer>Flash SCHM <span>Programmazione Trucco · Capelli · Costumi</span></footer>
+  </main>
+  <script src="https://unpkg.com/vis-timeline@7.7.3/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <script src="app.bundle.js"></script>
+</body>
+</html>

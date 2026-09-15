@@ -1,0 +1,13 @@
+{
+  "name": "flash-schm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python3 -m http.server 8080",
+    "build": "esbuild js/app.js --bundle --format=iife --target=es2020 --outfile=app.bundle.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  }
+}

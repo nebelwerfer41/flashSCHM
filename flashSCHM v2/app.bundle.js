@@ -1,0 +1,1309 @@
+(() => {
+  // js/utils/ids.js
+  var counter = 0;
+  var session = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  function newId() {
+    const crypto = globalThis.crypto;
+    if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
+    if (typeof crypto?.getRandomValues === "function") {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      bytes[6] = bytes[6] & 15 | 64;
+      bytes[8] = bytes[8] & 63 | 128;
+      const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+    return `local-${session}-${++counter}`;
+  }
+
+  // js/state.js
+  var DEPARTMENTS = ["trucco", "capelli", "costumi"];
+  var LABELS = {
+    trucco: "Trucco",
+    capelli: "Capelli",
+    costumi: "Costumi"
+  };
+  function createActor(data = {}) {
+    const id = data.id || newId();
+    return {
+      id,
+      name: "",
+      ready: 600,
+      priority: 1,
+      rules: { add: [], disabled: [] },
+      schedule: [],
+      ...data,
+      tasks: data.tasks || DEPARTMENTS.map((type) => ({
+        id: newId(),
+        actorId: id,
+        type,
+        duration: 0
+      }))
+    };
+  }
+  function createState() {
+    return {
+      actors: [],
+      professionals: {
+        trucco: ["Fede", "Flavia"].map((name) => ({ id: newId(), name })),
+        capelli: ["Ciro", "Lori"].map((name) => ({ id: newId(), name })),
+        costumi: []
+      },
+      settings: { maxAttempts: 48 },
+      rules: [
+        {
+          id: "default-order",
+          type: "order",
+          order: ["costumi", "capelli", "trucco"],
+          strength: "preferred"
+        }
+      ],
+      diagnostics: []
+    };
+  }
+
+  // js/utils/time.js
+  function parseTime(value) {
+    if (Number.isInteger(value) && value >= 0 && value < 1440) return value;
+    if (typeof value !== "string" || !/^\d{2}:\d{2}$/.test(value))
+      throw new RangeError("invalid-time");
+    const [h, m] = value.split(":").map(Number);
+    if (h > 23 || m > 59) throw new RangeError("invalid-time");
+    return h * 60 + m;
+  }
+  function formatTime(minutes2) {
+    if (!Number.isInteger(minutes2) || minutes2 < 0 || minutes2 > 1440)
+      throw new RangeError("invalid-time");
+    return `${String(Math.floor(minutes2 / 60)).padStart(2, "0")}:${String(minutes2 % 60).padStart(2, "0")}`;
+  }
+  var roundToFiveMinutes = (minutes2) => Math.round(minutes2 / 5) * 5;
+  var overlaps = (a, b) => a.start < b.end && b.start < a.end;
+  var arrivalTime = (actor) => actor.schedule?.length ? Math.min(...actor.schedule.map((t) => t.start)) : actor.ready;
+
+  // js/scheduling/rules.js
+  function resolveRules(globalRules = [], actorRules = {}, availableTasks = DEPARTMENTS) {
+    const types = new Set(
+      availableTasks.map((t) => typeof t === "string" ? t : t.type)
+    );
+    const added = actorRules.add || [], disabled = new Set(actorRules.disabled || []);
+    const replaced = new Set(added.map((r) => r.id));
+    return [
+      ...globalRules.filter((r) => !disabled.has(r.id) && !replaced.has(r.id)),
+      ...added
+    ].filter((r) => r.type === "professional" ? types.has(r.department) : true).map((r) => normalizeRule(r, types));
+  }
+  function normalizeRule(rule, types) {
+    const r = { ...rule };
+    if (r.type === "after") {
+      r.type = "before";
+      [r.first, r.second] = [r.second, r.first];
+    }
+    let edges = [];
+    if (r.type === "before") edges = [[r.first, r.second]];
+    if (r.type === "first")
+      edges = [...types].filter((t) => t !== r.department).map((t) => [r.department, t]);
+    if (r.type === "last")
+      edges = [...types].filter((t) => t !== r.department).map((t) => [t, r.department]);
+    if (r.type === "order") {
+      r.order = (r.order || []).filter((t) => types.has(t));
+      edges = r.order.flatMap((a, i) => r.order.slice(i + 1).map((b) => [a, b]));
+    }
+    return {
+      ...r,
+      edges: edges.filter(([a, b]) => types.has(a) && types.has(b))
+    };
+  }
+  function validateRuleConsistency(rules, types) {
+    const diagnostics = [];
+    const allowed = /* @__PURE__ */ new Set(["before", "first", "last", "order", "professional"]);
+    for (const r of rules) {
+      if (!allowed.has(r.type) || !["required", "preferred"].includes(r.strength) || r.type === "before" && (![r.first, r.second].every((t) => DEPARTMENTS.includes(t)) || r.first === r.second) || ["first", "last", "professional"].includes(r.type) && !DEPARTMENTS.includes(r.department) || r.type === "order" && (!Array.isArray(r.order) || new Set(r.order).size !== r.order.length) || r.type === "professional" && !r.professionalId)
+        diagnostics.push({ type: "invalid-rule", ruleId: r.id });
+    }
+    const edges = rules.filter((r) => r.strength === "required").flatMap((r) => r.edges);
+    const visiting = /* @__PURE__ */ new Set(), done = /* @__PURE__ */ new Set();
+    const cycle = (node) => {
+      if (visiting.has(node)) return true;
+      if (done.has(node)) return false;
+      visiting.add(node);
+      if (edges.filter(([a]) => a === node).some(([, b]) => cycle(b)))
+        return true;
+      visiting.delete(node);
+      done.add(node);
+      return false;
+    };
+    if (types.some((t) => cycle(t)))
+      diagnostics.push({
+        type: "contradictory-order-constraints",
+        rules: rules.filter((r) => r.strength === "required" && r.edges.length).map((r) => r.id)
+      });
+    for (const department of types) {
+      const ids = new Set(
+        rules.filter(
+          (r) => r.type === "professional" && r.strength === "required" && r.department === department
+        ).map((r) => r.professionalId)
+      );
+      if (ids.size > 1)
+        diagnostics.push({
+          type: "contradictory-professional-constraints",
+          department
+        });
+    }
+    return { valid: diagnostics.length === 0, diagnostics };
+  }
+  function validateCandidate(order, rules) {
+    const positions = new Map(
+      order.map((t, i) => [typeof t === "string" ? t : t.type, i])
+    );
+    const violations = rules.filter(
+      (r) => r.strength === "required" && r.edges.some(([a, b]) => positions.get(a) >= positions.get(b))
+    );
+    return { valid: violations.length === 0, violations };
+  }
+  function scoreCandidate(order, rules) {
+    const types = order.map((t) => typeof t === "string" ? t : t.type);
+    return rules.filter((r) => r.strength === "preferred").reduce((score, r) => {
+      if (r.type === "order" && r.legacyWeights)
+        return score + types.reduce(
+          (sum, t, i) => sum + (r.legacyWeights[t] || 99) * (i + 1),
+          0
+        );
+      if (r.type === "order")
+        return score + types.reduce(
+          (sum, t, i) => sum + Math.max(0, r.order.indexOf(t)) * (types.length - i),
+          0
+        );
+      return score + r.edges.filter(([a, b]) => types.indexOf(a) > types.indexOf(b)).length;
+    }, 0);
+  }
+  function generateTaskPermutations(tasks) {
+    if (tasks.length <= 1) return [tasks.slice()];
+    return tasks.flatMap(
+      (task, i) => generateTaskPermutations(tasks.filter((_, j) => j !== i)).map((rest) => [
+        task,
+        ...rest
+      ])
+    );
+  }
+  function candidateOrders(tasks, rules) {
+    return generateTaskPermutations(tasks).map((order, index) => ({
+      order,
+      index,
+      score: scoreCandidate(order, rules)
+    })).filter((c) => validateCandidate(c.order, rules).valid).sort((a, b) => a.score - b.score || a.index - b.index).map((c) => c.order);
+  }
+
+  // js/scheduling/professionals.js
+  function isProfessionalAvailable(professional, start, end, reservations) {
+    return !(reservations[professional.id] || []).some(
+      (slot) => overlaps({ start, end }, slot)
+    );
+  }
+  function findAvailableProfessionals(professionals, start, end, reservations) {
+    return professionals.filter(
+      (p) => isProfessionalAvailable(p, start, end, reservations)
+    );
+  }
+  function selectProfessional(available, rules, department) {
+    const relevant = rules.filter(
+      (r) => r.type === "professional" && r.department === department
+    );
+    const required = relevant.find((r) => r.strength === "required");
+    if (required)
+      return available.find((p) => p.id === required.professionalId) || null;
+    const preferred = relevant.filter((r) => r.strength === "preferred");
+    return available.map((p, index) => ({
+      p,
+      index,
+      score: preferred.filter((r) => r.professionalId === p.id).length
+    })).sort((a, b) => b.score - a.score || a.index - b.index)[0]?.p || null;
+  }
+  function reserveProfessional(reservations, task) {
+    var _a;
+    if (task.professionalId)
+      (reservations[_a = task.professionalId] || (reservations[_a] = [])).push({ ...task });
+  }
+
+  // js/scheduling/scheduler.js
+  function scheduleCandidate(actor, order, arrival, professionals, reservations, rules) {
+    let cursor = arrival;
+    const schedule = [];
+    for (const task of order) {
+      let chosen = null;
+      const pool = professionals[task.type] || [];
+      const required = rules.some(
+        (r) => r.type === "professional" && r.department === task.type && r.strength === "required"
+      );
+      for (let start = cursor; start >= 0 && start <= actor.ready; start = roundToFiveMinutes(start - 5)) {
+        const end = start + task.duration;
+        if (end > actor.ready) continue;
+        const professional = selectProfessional(
+          findAvailableProfessionals(pool, start, end, reservations),
+          rules,
+          task.type
+        );
+        if ((pool.length || required) && !professional) continue;
+        chosen = {
+          ...task,
+          actorId: actor.id,
+          start,
+          end,
+          professionalId: professional?.id || null
+        };
+        break;
+      }
+      if (!chosen || schedule.some((t) => overlaps(t, chosen))) return null;
+      schedule.push(chosen);
+      cursor = chosen.end;
+    }
+    if (!validateCandidate(
+      [...schedule].sort((a, b) => a.start - b.start),
+      rules
+    ).valid)
+      return null;
+    return schedule;
+  }
+  function generateSchedule({
+    actors,
+    professionals,
+    rules = [],
+    settings = {}
+  }) {
+    const professionalSchedules = {}, diagnostics = [];
+    const sorted = actors.map((a, index) => ({ a, index })).sort(
+      (x, y) => x.a.priority - y.a.priority || x.a.ready - y.a.ready || x.index - y.index
+    );
+    const result = [];
+    const seen = /* @__PURE__ */ new Set();
+    const professionalIds = Object.values(professionals).flat().map((p) => p.id);
+    if (new Set(professionalIds).size !== professionalIds.length || professionalIds.some((id) => !id)) {
+      return {
+        success: false,
+        actors: actors.map((a) => ({ ...a, schedule: [], arrival: null })),
+        professionalSchedules,
+        diagnostics: [{ type: "invalid-professionals" }]
+      };
+    }
+    for (const { a } of sorted) {
+      const actor = { ...a, schedule: [], arrival: null };
+      result.push(actor);
+      const tasks = DEPARTMENTS.flatMap(
+        (type) => a.tasks.filter((t) => t.type === type && t.duration > 0)
+      );
+      const ids = [a.id, ...a.tasks.map((t) => t.id)];
+      if (ids.some((id) => !id || seen.has(id)) || new Set(ids).size !== ids.length || !a.name.trim() || !Number.isInteger(a.ready) || a.ready < 0 || a.ready >= 1440 || !Number.isInteger(a.priority) || a.priority < 1 || a.tasks.some(
+        (t) => !Number.isInteger(t.duration) || t.duration < 0 || !DEPARTMENTS.includes(t.type) || t.actorId !== a.id
+      ) || new Set(tasks.map((t) => t.type)).size !== tasks.length) {
+        diagnostics.push({ type: "invalid-actor", actorId: a.id });
+        continue;
+      }
+      ids.forEach((id) => seen.add(id));
+      const effective = resolveRules(rules, a.rules, tasks), validation = validateRuleConsistency(
+        effective,
+        tasks.map((t) => t.type)
+      );
+      if (!validation.valid) {
+        diagnostics.push(
+          ...validation.diagnostics.map((d) => ({ ...d, actorId: a.id }))
+        );
+        continue;
+      }
+      const orders = candidateOrders(tasks, effective);
+      const initial = roundToFiveMinutes(
+        a.ready - tasks.reduce((sum, t) => sum + t.duration, 0)
+      );
+      for (let attempt = 0; attempt <= (settings.maxAttempts ?? 48); attempt++) {
+        const arrival = initial - attempt * 5;
+        if (arrival < 0 || actor.arrival !== null && arrival < actor.arrival)
+          break;
+        for (const order of orders) {
+          const schedule = scheduleCandidate(
+            a,
+            order,
+            arrival,
+            professionals,
+            professionalSchedules,
+            effective
+          );
+          if (schedule) {
+            const actualArrival = arrivalTime({ ...actor, schedule });
+            if (actor.arrival === null || actualArrival > actor.arrival) {
+              actor.schedule = schedule;
+              actor.arrival = actualArrival;
+            }
+          }
+        }
+        if (!tasks.length) break;
+      }
+      if (tasks.length && !actor.schedule.length) {
+        const required = effective.filter(
+          (r) => r.type === "professional" && r.strength === "required"
+        );
+        diagnostics.push(
+          ...(required.length ? required.map((r) => ({
+            type: "required-professional-unavailable",
+            department: r.department,
+            professionalId: r.professionalId
+          })) : [{ type: "cannot-finish-before-ready" }]).map((d) => ({ ...d, actorId: a.id }))
+        );
+      } else {
+        actor.arrival = arrivalTime(actor);
+        actor.schedule.forEach(
+          (t) => reserveProfessional(professionalSchedules, t)
+        );
+      }
+    }
+    return {
+      success: diagnostics.length === 0,
+      actors: result,
+      professionalSchedules,
+      diagnostics
+    };
+  }
+
+  // js/scheduling/conflicts.js
+  function detectConflicts(actors, globalRules = []) {
+    const tasks = actors.flatMap((a) => a.schedule), conflicts = [];
+    for (let i = 0; i < tasks.length; i++)
+      for (let j = i + 1; j < tasks.length; j++) {
+        const a = tasks[i], b = tasks[j];
+        if (!overlaps(a, b)) continue;
+        if (a.actorId === b.actorId)
+          conflicts.push({
+            type: "actor-overlap",
+            actorId: a.actorId,
+            taskIds: [a.id, b.id]
+          });
+        if (a.professionalId && a.professionalId === b.professionalId)
+          conflicts.push({
+            type: "professional-overlap",
+            professionalId: a.professionalId,
+            taskIds: [a.id, b.id]
+          });
+      }
+    for (const actor of actors) {
+      const rules = resolveRules(globalRules, actor.rules, actor.schedule);
+      for (const t of actor.schedule) {
+        if (t.end > actor.ready)
+          conflicts.push({
+            type: "after-ready",
+            actorId: actor.id,
+            taskIds: [t.id]
+          });
+        if (rules.some(
+          (r) => r.type === "professional" && r.strength === "required" && r.department === t.type && r.professionalId !== t.professionalId
+        ))
+          conflicts.push({
+            type: "required-professional-violated",
+            actorId: actor.id,
+            taskIds: [t.id]
+          });
+      }
+      const validation = validateCandidate(
+        [...actor.schedule].sort((a, b) => a.start - b.start),
+        rules
+      );
+      if (!validation.valid)
+        conflicts.push({
+          type: "required-order-violated",
+          actorId: actor.id,
+          taskIds: actor.schedule.map((t) => t.id)
+        });
+    }
+    return conflicts;
+  }
+  function moveTask(state, { actorId, taskId, start, end, professionalId }) {
+    const actor = state.actors.find((a) => a.id === actorId), task = actor?.schedule.find((t) => t.id === taskId);
+    if (!task || !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > 1440 || start >= end)
+      return { valid: false };
+    const pool = state.professionals[task.type];
+    if (professionalId ? !pool.some((p) => p.id === professionalId) : pool.length > 0)
+      return { valid: false };
+    task.start = start;
+    task.end = end;
+    task.professionalId = professionalId;
+    actor.arrival = arrivalTime(actor);
+    return { valid: true, conflicts: detectConflicts(state.actors, state.rules) };
+  }
+
+  // js/timeline/timeline.js
+  var date = (minutes2) => new Date(2023, 0, 1, 0, minutes2);
+  var minutes = (value) => Math.round((new Date(value) - date(0)) / 6e4);
+  var content = (text) => {
+    const node = document.createElement("span");
+    node.textContent = text;
+    return node;
+  };
+  function createTimeline(container, vis, getState, onchange) {
+    if (!vis) {
+      container.textContent = "Timeline non disponibile: verifica la connessione e ricarica la pagina.";
+      return { render() {
+      } };
+    }
+    const items = new vis.DataSet(), groups = new vis.DataSet();
+    let selectedActor = null;
+    function edit(item, callback) {
+      const group = groups.get(item.group), original = items.get(item.id);
+      if (!group || !original || group.department !== original.department) {
+        callback(null);
+        return;
+      }
+      const result = moveTask(getState(), {
+        actorId: original.actorId,
+        taskId: original.taskId,
+        start: minutes(item.start),
+        end: minutes(item.end),
+        professionalId: group.professionalId
+      });
+      callback(result.valid ? item : null);
+      if (result.valid) onchange();
+    }
+    const timeline = new vis.Timeline(container, items, groups, {
+      start: date(360),
+      end: date(720),
+      groupOrder: "value",
+      editable: {
+        updateTime: true,
+        updateGroup: true,
+        add: false,
+        remove: false
+      },
+      onMove: edit,
+      onUpdate: edit,
+      snap: (value) => date(Math.round(minutes(value) / 5) * 5),
+      zoomMin: 36e5,
+      zoomMax: 864e5,
+      margin: { item: { horizontal: 0, vertical: 5 }, axis: 5 }
+    });
+    timeline.on("select", (properties) => {
+      selectedActor = items.get(properties.items[0])?.actorId || null;
+      paint();
+    });
+    function taskContent(actor, task) {
+      const node = document.createElement("button");
+      node.type = "button";
+      node.id = `timeline-task-${task.id}`;
+      node.className = "timeline-task";
+      node.textContent = `${actor.name} \xB7 ${LABELS[task.type]}`;
+      node.setAttribute("aria-label", `${actor.name}, ${LABELS[task.type]}. Frecce destra/sinistra: sposta di 5 minuti. Maiusc e freccia: modifica la fine. Su/gi\xF9: cambia professionista.`);
+      node.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        selectedActor = actor.id;
+        if (event.key === "Enter" || event.key === " ") {
+          paint();
+          return;
+        }
+        const item = { ...items.get(task.id) };
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          const delta = event.key === "ArrowRight" ? 5 : -5;
+          item.end = date(minutes(item.end) + delta);
+          if (!event.shiftKey) item.start = date(minutes(item.start) + delta);
+        } else {
+          const peers = groups.get().filter((g) => g.department === task.type);
+          const index = peers.findIndex((g) => g.id === item.group);
+          const target = peers[index + (event.key === "ArrowDown" ? 1 : -1)];
+          if (!target) return;
+          item.group = target.id;
+        }
+        edit(item, () => {
+        });
+        document.getElementById(node.id)?.focus({ preventScroll: true });
+      });
+      return node;
+    }
+    function paint() {
+      const state = getState(), conflicting = new Set(
+        detectConflicts(state.actors, state.rules).flatMap((c) => c.taskIds)
+      );
+      items.update(
+        items.get().map((item) => ({
+          id: item.id,
+          className: [
+            item.department,
+            conflicting.has(item.id) ? "conflict" : "",
+            item.actorId === selectedActor ? "highlight" : ""
+          ].filter(Boolean).join(" ")
+        }))
+      );
+    }
+    function render(fit = false) {
+      const state = getState();
+      groups.clear();
+      items.clear();
+      for (const [index, department] of DEPARTMENTS.entries()) {
+        const pool = state.professionals[department];
+        for (const [i, p] of pool.entries())
+          groups.add({
+            id: p.id,
+            professionalId: p.id,
+            department,
+            content: content(`${LABELS[department]} \xB7 ${p.name}`),
+            value: index * 1e4 + i
+          });
+        if (!pool.length)
+          groups.add({
+            id: `unassigned:${department}`,
+            professionalId: null,
+            department,
+            content: content(LABELS[department]),
+            value: index * 1e4
+          });
+      }
+      for (const actor of state.actors)
+        for (const task of actor.schedule) {
+          let group = task.professionalId || `unassigned:${task.type}`;
+          if (!groups.get(group))
+            groups.add({
+              id: group,
+              department: task.type,
+              professionalId: task.professionalId,
+              content: content(`${LABELS[task.type]} \xB7 Non disponibile`),
+              value: 99999
+            });
+          items.add({
+            id: task.id,
+            taskId: task.id,
+            actorId: actor.id,
+            department: task.type,
+            professionalId: task.professionalId,
+            group,
+            start: date(task.start),
+            end: date(task.end),
+            content: taskContent(actor, task),
+            className: task.type
+          });
+        }
+      paint();
+      if (fit && items.length) timeline.fit({ animation: false });
+    }
+    return { render, destroy: () => timeline.destroy() };
+  }
+
+  // js/io/xlsx.js
+  var durationColumns = {
+    trucco: "DurataTrucco",
+    capelli: "DurataCapelli",
+    costumi: "DurataCostumi"
+  };
+  var professionalColumns = {
+    trucco: "ProfessionistaTrucco",
+    capelli: "ProfessionistaCapelli"
+  };
+  function importedTime(value) {
+    if (typeof value === "number" && value >= 0 && value < 1)
+      return Math.round(value * 1440) % 1440;
+    return parseTime(String(value));
+  }
+  function parseRows({ Actors = [], Depts = [], FlashSCHM = [] }) {
+    if (FlashSCHM.length) {
+      if (Number(FlashSCHM[0].Version) !== 2)
+        throw new Error("unsupported-file-version");
+      const state2 = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
+      validateProject(state2);
+      return state2;
+    }
+    const state = createState(), priorities = { trucco: 1, capelli: 2, costumi: 3 };
+    for (const row of Depts) {
+      const type = String(row.Reparto).toLowerCase();
+      if (!DEPARTMENTS.includes(type)) continue;
+      const count = Number(row.NumeroProfessionisti);
+      if (!Number.isInteger(count) || count < 0 || count > 1e3)
+        throw new Error("invalid-professionals");
+      const names = String(row.NomiProfessionisti || "").split(",").map((n) => n.trim()).filter(Boolean);
+      state.professionals[type] = Array.from({ length: count }, (_, i) => ({
+        id: newId(),
+        name: names[i] || `${type[0].toUpperCase()} ${i + 1}`
+      }));
+      priorities[type] = Number(row.Priorita) || 3;
+    }
+    if (new Set(Object.values(priorities)).size < 3)
+      Object.assign(priorities, { trucco: 1, capelli: 2, costumi: 3 });
+    state.rules = [
+      {
+        id: "legacy-order",
+        type: "order",
+        order: DEPARTMENTS.slice().sort((a, b) => priorities[b] - priorities[a]),
+        strength: "preferred",
+        legacyWeights: priorities
+      }
+    ];
+    for (const row of Actors) {
+      const actor = createActor({
+        name: String(row.Nome || ""),
+        ready: importedTime(row.OrarioPronti),
+        priority: Number(row.PrioritaAttore) || 1
+      });
+      for (const task of actor.tasks)
+        task.duration = Number(row[durationColumns[task.type]]) || 0;
+      for (const [department, column] of Object.entries(professionalColumns)) {
+        const value = row[column];
+        if (value !== void 0 && value !== null && String(value) !== "") {
+          const index = Number(value), professional = state.professionals[department][index];
+          actor.rules.add.push({
+            id: newId(),
+            type: "professional",
+            department,
+            strength: "required",
+            professionalId: professional?.id || `missing-${department}-${value}`
+          });
+        }
+      }
+      state.actors.push(actor);
+    }
+    validateProject(state);
+    return state;
+  }
+  function serializeRows(state) {
+    validateProject(state);
+    const order = state.rules.find(
+      (r) => r.type === "order" && r.strength === "preferred"
+    );
+    return {
+      Actors: state.actors.map((a) => {
+        const row = {
+          Nome: a.name,
+          OrarioPronti: formatTime(a.ready),
+          PrioritaAttore: a.priority
+        };
+        for (const type of DEPARTMENTS)
+          row[durationColumns[type]] = a.tasks.find((t) => t.type === type)?.duration || 0;
+        for (const [department, column] of Object.entries(professionalColumns)) {
+          const rule = a.rules.add.find(
+            (r) => r.type === "professional" && r.department === department && r.strength === "required"
+          );
+          const index = state.professionals[department].findIndex(
+            (p) => p.id === rule?.professionalId
+          );
+          row[column] = index >= 0 ? index : "";
+        }
+        return row;
+      }),
+      Depts: DEPARTMENTS.map((type) => ({
+        Reparto: type,
+        NumeroProfessionisti: state.professionals[type].length,
+        NomiProfessionisti: state.professionals[type].map((p) => p.name).join(", "),
+        Priorita: order?.legacyWeights?.[type] || (order ? 3 - order.order.indexOf(type) : DEPARTMENTS.indexOf(type) + 1)
+      })),
+      FlashSCHM: (JSON.stringify(state).match(/[\s\S]{1,30000}/g) || []).map(
+        (Data) => ({ Version: 2, Data })
+      )
+    };
+  }
+  function validateProject(state) {
+    if (!state || !Array.isArray(state.actors) || !Array.isArray(state.rules) || !state.professionals || !state.settings)
+      throw new Error("invalid-project");
+    const ids = /* @__PURE__ */ new Set();
+    const identify = (id) => {
+      if (typeof id !== "string" || !id || ids.has(id))
+        throw new Error("duplicate-or-missing-id");
+      ids.add(id);
+    };
+    for (const type of DEPARTMENTS) {
+      if (!Array.isArray(state.professionals[type]))
+        throw new Error("invalid-professionals");
+      for (const p of state.professionals[type]) {
+        identify(p.id);
+        if (typeof p.name !== "string") throw new Error("invalid-professionals");
+      }
+    }
+    const checkRules = (rules) => {
+      if (!Array.isArray(rules)) throw new Error("invalid-rule");
+      const ruleIds = /* @__PURE__ */ new Set();
+      for (const r of rules) {
+        if (!r || typeof r.id !== "string" || !r.id || ruleIds.has(r.id) || !["required", "preferred"].includes(r.strength) || !["before", "after", "first", "last", "order", "professional"].includes(
+          r.type
+        ))
+          throw new Error("invalid-rule");
+        ruleIds.add(r.id);
+        if (["before", "after"].includes(r.type) && (!DEPARTMENTS.includes(r.first) || !DEPARTMENTS.includes(r.second)))
+          throw new Error("invalid-rule");
+        if (["first", "last", "professional"].includes(r.type) && !DEPARTMENTS.includes(r.department))
+          throw new Error("invalid-rule");
+        if (r.type === "professional" && typeof r.professionalId !== "string")
+          throw new Error("invalid-rule");
+        if (r.type === "order" && (!Array.isArray(r.order) || r.order.some((t) => !DEPARTMENTS.includes(t)) || new Set(r.order).size !== r.order.length))
+          throw new Error("invalid-rule");
+      }
+    };
+    checkRules(state.rules);
+    for (const a of state.actors) {
+      identify(a.id);
+      if (typeof a.name !== "string" || !Number.isInteger(a.ready) || a.ready < 0 || a.ready >= 1440 || !Number.isInteger(a.priority) || a.priority < 1 || !Array.isArray(a.tasks) || !Array.isArray(a.schedule) || !a.rules || !Array.isArray(a.rules.disabled))
+        throw new Error("invalid-actor");
+      checkRules(a.rules.add);
+      for (const t of a.tasks) {
+        identify(t.id);
+        if (t.actorId !== a.id || !DEPARTMENTS.includes(t.type) || !Number.isInteger(t.duration) || t.duration < 0)
+          throw new Error("invalid-task");
+      }
+      const scheduled = /* @__PURE__ */ new Set();
+      for (const t of a.schedule) {
+        if (scheduled.has(t.id) || !a.tasks.some(
+          (source) => source.id === t.id && source.type === t.type
+        ) || t.actorId !== a.id || !Number.isInteger(t.start) || !Number.isInteger(t.end) || t.start < 0 || t.end > 1440 || t.start >= t.end)
+          throw new Error("invalid-schedule");
+        scheduled.add(t.id);
+      }
+    }
+  }
+  function readWorkbook(XLSX, buffer) {
+    const workbook = XLSX.read(buffer, { type: "array" }), rows = {};
+    if (!workbook.Sheets.Actors && !workbook.Sheets.FlashSCHM)
+      throw new Error("missing-actors-sheet");
+    for (const name of ["Actors", "Depts", "FlashSCHM"])
+      rows[name] = workbook.Sheets[name] ? XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: "" }) : [];
+    return parseRows(rows);
+  }
+  function writeWorkbook(XLSX, state) {
+    const book = XLSX.utils.book_new();
+    for (const [name, rows] of Object.entries(serializeRows(state)))
+      XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows), name);
+    return book;
+  }
+
+  // js/ui/dom.js
+  function el(tag, props = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (key.startsWith("on"))
+        node.addEventListener(key.slice(2).toLowerCase(), value);
+      else if (key === "className") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key in node) node[key] = value;
+      else node.setAttribute(key, value);
+    }
+    node.append(...children);
+    return node;
+  }
+  function select(options, value, onchange) {
+    const node = el(
+      "select",
+      {},
+      ...options.map(([id, label]) => el("option", { value: id, text: label }))
+    );
+    node.value = value;
+    node.addEventListener("change", () => onchange(node.value));
+    return node;
+  }
+  var fieldId = 0;
+  var field = (label, node) => {
+    node.id || (node.id = `field-${++fieldId}`);
+    return el("label", { htmlFor: node.id }, el("span", { text: label }), node);
+  };
+  var button = (label, onclick) => el("button", {
+    type: "button",
+    text: label,
+    onclick,
+    className: label.startsWith("Rimuovi") ? "danger" : ""
+  });
+
+  // js/ui/rules.js
+  var departments = DEPARTMENTS.map((t) => [t, LABELS[t]]);
+  var orderOptions = generateTaskPermutations(DEPARTMENTS).map((order) => [
+    order.join(","),
+    order.map((t) => LABELS[t]).join(" \u2192 ")
+  ]);
+  function ruleLabel(r, state) {
+    const strength = r.strength === "required" ? "Richiedi" : "Preferisci";
+    if (r.type === "order")
+      return `${strength}: ${r.order.map((t) => LABELS[t]).join(" \u2192 ")}`;
+    if (r.type === "before" || r.type === "after")
+      return `${strength}: ${LABELS[r.first]} ${r.type === "before" ? "prima di" : "dopo"} ${LABELS[r.second]}`;
+    if (r.type === "professional")
+      return `${strength}: ${LABELS[r.department]} \u2014 ${state.professionals[r.department].find((p) => p.id === r.professionalId)?.name || "Professionista non disponibile"}`;
+    return `${strength}: ${LABELS[r.department]} ${r.type === "first" ? "per primo" : "per ultimo"}`;
+  }
+  function renderRuleEditor(container, state, actor, onchange) {
+    container.replaceChildren();
+    const own = actor ? actor.rules.add : state.rules;
+    if (actor && state.rules.length) {
+      const inherited = el(
+        "fieldset",
+        {},
+        el("legend", { text: "Regole globali ereditate" })
+      );
+      for (const r of state.rules) {
+        const checkbox = el("input", {
+          type: "checkbox",
+          checked: !actor.rules.disabled.includes(r.id)
+        });
+        checkbox.addEventListener("change", () => {
+          actor.rules.disabled = actor.rules.disabled.filter((id) => id !== r.id);
+          if (!checkbox.checked) actor.rules.disabled.push(r.id);
+          onchange();
+        });
+        inherited.append(field(ruleLabel(r, state), checkbox));
+      }
+      inherited.append(
+        el("small", {
+          text: "Deseleziona una regola per disattivarla per questo attore. Le regole aggiunte sotto si combinano con le altre."
+        })
+      );
+      container.append(inherited);
+    }
+    for (const r of own)
+      container.append(
+        el(
+          "div",
+          { className: `rule-chip ${r.strength}` },
+          el("span", { text: ruleLabel(r, state) }),
+          button("Rimuovi", () => {
+            own.splice(own.indexOf(r), 1);
+            renderRuleEditor(container, state, actor, onchange);
+            onchange();
+          })
+        )
+      );
+    const draft = {
+      type: "before",
+      strength: "preferred",
+      first: "trucco",
+      second: "capelli",
+      department: "trucco",
+      order: ["trucco", "capelli", "costumi"],
+      professionalId: ""
+    };
+    const editor = el("div", { className: "rule-builder", "data-strength": "preferred" }), parameters = el("div", { className: "rule-parameters", role: "group", "aria-label": "Parametri della regola" }), feedback = el("p", { className: "rule-error", role: "status" });
+    function renderParameters() {
+      parameters.replaceChildren();
+      if (["before", "after"].includes(draft.type)) {
+        parameters.append(
+          field(
+            "Reparto",
+            select(departments, draft.first, (v) => draft.first = v)
+          ),
+          field(
+            draft.type === "before" ? "Prima di" : "Dopo",
+            select(departments, draft.second, (v) => draft.second = v)
+          )
+        );
+      } else if (draft.type === "order") {
+        parameters.append(
+          field(
+            "Sequenza",
+            select(
+              orderOptions,
+              draft.order.join(","),
+              (v) => draft.order = v.split(",")
+            )
+          )
+        );
+      } else {
+        parameters.append(
+          field(
+            "Reparto",
+            select(departments, draft.department, (v) => {
+              draft.department = v;
+              draft.professionalId = "";
+              renderParameters();
+            })
+          )
+        );
+        if (draft.type === "professional") {
+          const pool = state.professionals[draft.department];
+          draft.professionalId = draft.professionalId || pool[0]?.id || "";
+          parameters.append(
+            field(
+              "Professionista",
+              select(
+                pool.length ? pool.map((p) => [p.id, p.name]) : [["", "Nessun professionista"]],
+                draft.professionalId,
+                (v) => draft.professionalId = v
+              )
+            )
+          );
+        }
+      }
+    }
+    editor.append(
+      field(
+        "Forza",
+        select(
+          [
+            ["preferred", "Preferisci (con alternativa)"],
+            ["required", "Richiedi (obbligatorio)"]
+          ],
+          draft.strength,
+          (v) => {
+            draft.strength = v;
+            editor.setAttribute("data-strength", v);
+          }
+        )
+      ),
+      field(
+        "Tipo di regola",
+        select(
+          [
+            ["before", "Prima di"],
+            ["after", "Dopo"],
+            ["first", "Primo reparto"],
+            ["last", "Ultimo reparto"],
+            ["order", "Sequenza completa"],
+            ["professional", "Professionista"]
+          ],
+          draft.type,
+          (v) => {
+            draft.type = v;
+            renderParameters();
+          }
+        )
+      ),
+      parameters,
+      button("Aggiungi regola", () => {
+        if (["before", "after"].includes(draft.type) && draft.first === draft.second) {
+          feedback.textContent = "Scegli due reparti diversi per questa regola.";
+          return;
+        }
+        if (draft.type === "professional" && !draft.professionalId) {
+          feedback.textContent = "Aggiungi prima un professionista nel reparto selezionato.";
+          return;
+        }
+        const r = { id: newId(), type: draft.type, strength: draft.strength };
+        if (["before", "after"].includes(r.type))
+          Object.assign(r, { first: draft.first, second: draft.second });
+        else if (r.type === "order") r.order = draft.order.slice();
+        else {
+          r.department = draft.department;
+          if (r.type === "professional") r.professionalId = draft.professionalId;
+        }
+        own.push(r);
+        renderRuleEditor(container, state, actor, onchange);
+        onchange();
+      })
+    );
+    editor.append(feedback);
+    renderParameters();
+    container.append(editor);
+  }
+
+  // js/ui/render.js
+  function renderActors(container, state, changed, remove) {
+    container.replaceChildren();
+    if (!state.actors.length) container.append(el(
+      "div",
+      { className: "empty-state" },
+      el("strong", { text: "Il piano di lavoro inizia dagli attori" }),
+      el("p", { text: "Aggiungi il primo attore e imposta il suo orario READY." })
+    ));
+    for (const actor of state.actors) {
+      const summary = el("summary");
+      const badge = () => {
+        const exceptions = actor.rules.add.length + actor.rules.disabled.length;
+        summary.textContent = `Avanzate \xB7 Priorit\xE0 ${actor.priority}${exceptions ? ` \xB7 ${exceptions} eccezioni` : ""}`;
+        if (summary.parentElement) summary.parentElement.classList.toggle("has-exceptions", exceptions > 0);
+      };
+      badge();
+      const input = (label, type, value, update) => {
+        const node = el("input", { type, value, "aria-label": label });
+        if (type === "number") {
+          node.min = 0;
+          node.step = 1;
+        }
+        node.addEventListener("input", () => {
+          try {
+            update(node.value);
+            node.setCustomValidity("");
+            node.setAttribute("aria-invalid", "false");
+            badge();
+            changed();
+          } catch {
+            node.setCustomValidity("Valore non valido");
+            node.setAttribute("aria-invalid", "true");
+            node.reportValidity();
+          }
+        });
+        return field(label, node);
+      };
+      const normal = el(
+        "div",
+        { className: "actor-main" },
+        input("Attore", "text", actor.name, (v) => actor.name = v),
+        input(
+          "READY \xB7 pronti",
+          "time",
+          formatTime(actor.ready),
+          (v) => actor.ready = parseTime(v)
+        )
+      );
+      for (const type of DEPARTMENTS) {
+        const durationField = input(
+          `${LABELS[type]} (min)`,
+          "number",
+          actor.tasks.find((t) => t.type === type)?.duration || 0,
+          (v) => {
+            const n = Number(v);
+            if (!Number.isInteger(n) || n < 0) throw new Error();
+            actor.tasks.find((t) => t.type === type).duration = n;
+          }
+        );
+        durationField.className = `department-field department-${type}`;
+        normal.append(durationField);
+      }
+      const editor = el("div"), advanced = el(
+        "details",
+        { className: "actor-advanced" },
+        summary,
+        input("Priorit\xE0 attore (1 = prima)", "number", actor.priority, (v) => {
+          const n = Number(v);
+          if (!Number.isInteger(n) || n < 1) throw new Error();
+          actor.priority = n;
+        }),
+        el("h3", { text: "Regole per questo attore" }),
+        editor,
+        button("Rimuovi attore", () => remove(actor.id))
+      );
+      renderRuleEditor(editor, state, actor, () => {
+        badge();
+        changed();
+      });
+      const row = el(
+        "article",
+        { className: "actor-row", "data-actor-id": actor.id },
+        normal,
+        advanced
+      );
+      badge();
+      container.append(row);
+    }
+  }
+  function renderProfessionals(container, state, changed, rerender) {
+    container.replaceChildren();
+    for (const type of DEPARTMENTS) {
+      const section = el("section", { className: `professional-department department-${type}`, "aria-label": LABELS[type] }, el("h3", { text: LABELS[type] }));
+      if (!state.professionals[type].length)
+        section.append(
+          el(
+            "div",
+            { className: "capacity-status" },
+            el("strong", { text: "Capacit\xE0 libera" }),
+            el("small", { text: "Attori in contemporanea, senza limite di reparto." })
+          )
+        );
+      for (const p of state.professionals[type]) {
+        const input = el("input", {
+          value: p.name,
+          "aria-label": `Nome professionista ${LABELS[type]}`
+        });
+        input.addEventListener("change", () => {
+          p.name = input.value;
+          changed();
+        });
+        section.append(
+          el(
+            "div",
+            { className: "professional-row" },
+            field("Nome professionista", input),
+            button("Rimuovi", () => {
+              state.professionals[type] = state.professionals[type].filter(
+                (other) => other.id !== p.id
+              );
+              changed();
+              rerender();
+            })
+          )
+        );
+      }
+      container.append(section);
+    }
+  }
+  function renderTable(body, state, { showEnd, showProfessional }) {
+    body.replaceChildren();
+    if (!state.actors.length) body.append(el("tr", {}, el("td", {
+      colSpan: 6,
+      className: "table-empty",
+      text: "Nessun attore nel piano. Aggiungi gli attori per iniziare."
+    })));
+    for (const actor of state.actors) {
+      const row = el("tr", { "data-actor-id": actor.id });
+      const cells = [
+        actor.name,
+        actor.arrival == null ? "\u2014" : formatTime(actor.arrival)
+      ];
+      for (const type of DEPARTMENTS) {
+        const task = actor.schedule.find((t) => t.type === type);
+        let text = task ? `${formatTime(task.start)}${showEnd ? ` \u2013 ${formatTime(task.end)}` : ""}` : "\u2014";
+        if (task && showProfessional)
+          text += ` (${state.professionals[type].find((p) => p.id === task.professionalId)?.name || (task.professionalId ? "Non disponibile" : "Qualsiasi")})`;
+        cells.push(text);
+      }
+      cells.push(formatTime(actor.ready));
+      row.append(...cells.map((text) => el("td", { text })));
+      body.append(row);
+    }
+  }
+  var messages = {
+    "invalid-actor": "Controlla nome, orario, priorit\xE0 e durate dell\u2019attore.",
+    "invalid-professionals": "Configurazione dei professionisti non valida.",
+    "invalid-rule": "Regola non valida.",
+    "contradictory-order-constraints": "Le regole obbligatorie sull\u2019ordine sono in contraddizione.",
+    "contradictory-professional-constraints": "Sono richiesti professionisti diversi per lo stesso reparto.",
+    "required-professional-unavailable": "Nessuna programmazione possibile con il professionista richiesto.",
+    "cannot-finish-before-ready": "Impossibile completare le attivit\xE0 prima dei Pronti nello stesso giorno.",
+    "actor-overlap": "Attivit\xE0 sovrapposte per lo stesso attore.",
+    "professional-overlap": "Professionista assegnato ad attivit\xE0 sovrapposte.",
+    "after-ready": "Attivit\xE0 oltre l\u2019orario di Pronti.",
+    "required-professional-violated": "Il professionista assegnato viola una regola obbligatoria.",
+    "required-order-violated": "L\u2019ordine delle attivit\xE0 viola una regola obbligatoria."
+  };
+  function renderDiagnostics(container, state, conflicts, stale) {
+    container.replaceChildren();
+    const issues = [...state.diagnostics, ...conflicts];
+    const hasSchedule = state.actors.some((a) => a.schedule.length);
+    container.setAttribute("data-status", issues.length ? "error" : stale ? "warning" : hasSchedule ? "success" : "idle");
+    container.append(el("strong", { text: issues.length ? `Attenzione \xB7 ${issues.length} problemi da verificare` : stale ? "Programmazione da aggiornare" : hasSchedule ? "Programmazione disponibile \xB7 nessun conflitto rilevato" : "In attesa della programmazione" }));
+    if (!hasSchedule && !issues.length && !stale) container.append(el("p", { text: "Completa i dati e seleziona Genera programmazione per calcolare gli orari." }));
+    if (stale)
+      container.append(
+        el("p", {
+          text: "Dati modificati: gli orari visualizzati sono obsoleti. Genera nuovamente per aggiornarli."
+        })
+      );
+    const list = el("ul");
+    for (const d of issues) {
+      const actor = state.actors.find((a) => a.id === d.actorId);
+      const involved = d.taskIds ? state.actors.filter((a) => a.schedule.some((t) => d.taskIds.includes(t.id))).map((a) => a.name).join(", ") : "";
+      list.append(
+        el("li", {
+          text: `${actor?.name || involved || "Programmazione"}: ${messages[d.type] || d.type}${d.department ? ` (${LABELS[d.department]})` : ""}`
+        })
+      );
+    }
+    if (list.childNodes.length) container.append(list);
+  }
+
+  // js/app.js
+  function initApp() {
+    let state = createState(), stale = false;
+    const $ = (id) => document.getElementById(id);
+    let timeline = { render() {
+    } };
+    function renderSchedule(fit = false) {
+      renderTable($("scheduleTableBody"), state, {
+        showEnd: $("showStartEndCheckbox").checked,
+        showProfessional: $("showProfessionalCheckbox").checked
+      });
+      renderDiagnostics(
+        $("diagnostics"),
+        state,
+        detectConflicts(state.actors, state.rules),
+        stale
+      );
+      timeline.render(fit);
+    }
+    function changed() {
+      stale = state.actors.some((a) => a.schedule.length > 0);
+      state.diagnostics = [];
+      renderSchedule();
+    }
+    function renderConfiguration() {
+      renderProfessionals(
+        $("professionalSettings"),
+        state,
+        changed,
+        renderConfiguration
+      );
+      for (const [index, type] of DEPARTMENTS.entries())
+        $("professionalSettings").children[index].append(
+          button(`Aggiungi ${LABELS[type]}`, () => {
+            state.professionals[type].push({
+              id: newId(),
+              name: `${LABELS[type]} ${state.professionals[type].length + 1}`
+            });
+            changed();
+            renderConfiguration();
+          })
+        );
+      renderRuleEditor($("globalRules"), state, null, () => {
+        changed();
+        renderActorRows();
+      });
+      renderActorRows();
+    }
+    function renderActorRows() {
+      $("actorCount").textContent = String(state.actors.length);
+      renderActors($("actorRows"), state, changed, (id) => {
+        state.actors = state.actors.filter((a) => a.id !== id);
+        changed();
+        renderActorRows();
+      });
+    }
+    $("addActor").addEventListener("click", () => {
+      state.actors.push(createActor());
+      changed();
+      renderActorRows();
+      $("actorRows").lastElementChild?.querySelector("input")?.focus();
+    });
+    $("generate").addEventListener("click", () => {
+      if ([...document.querySelectorAll("input")].some(
+        (input) => !input.reportValidity()
+      ))
+        return;
+      const result = generateSchedule(state);
+      for (const actor of state.actors) {
+        const scheduled = result.actors.find((a) => a.id === actor.id);
+        actor.schedule = scheduled.schedule;
+        actor.arrival = scheduled.arrival;
+      }
+      state.diagnostics = result.diagnostics;
+      stale = false;
+      renderSchedule(true);
+    });
+    for (const id of ["showStartEndCheckbox", "showProfessionalCheckbox"])
+      $(id).addEventListener("change", () => renderSchedule());
+    $("export").addEventListener("click", () => {
+      try {
+        if (!globalThis.XLSX)
+          throw new Error(
+            "Libreria XLS non disponibile. Verifica la connessione."
+          );
+        globalThis.XLSX.writeFile(
+          writeWorkbook(globalThis.XLSX, state),
+          "flash_scheduler_export.xlsx"
+        );
+        $("ioStatus").setAttribute("data-status", "success");
+        $("ioStatus").textContent = "Esportazione completata.";
+      } catch (error) {
+        $("ioStatus").setAttribute("data-status", "error");
+        $("ioStatus").textContent = `Esportazione non riuscita: ${error.message}`;
+      }
+    });
+    $("xlsImportInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        if (!globalThis.XLSX)
+          throw new Error(
+            "Libreria XLS non disponibile. Verifica la connessione."
+          );
+        const imported = readWorkbook(globalThis.XLSX, await file.arrayBuffer());
+        state = imported;
+        state.diagnostics || (state.diagnostics = []);
+        stale = false;
+        renderConfiguration();
+        renderSchedule(true);
+        $("ioStatus").setAttribute("data-status", "success");
+        $("ioStatus").textContent = "Importazione completata.";
+      } catch (error) {
+        $("ioStatus").setAttribute("data-status", "error");
+        $("ioStatus").textContent = `Importazione non riuscita: ${error.message}`;
+      }
+      event.target.value = "";
+    });
+    renderConfiguration();
+    try {
+      timeline = createTimeline(
+        $("visualization"),
+        globalThis.vis,
+        () => state,
+        () => renderSchedule()
+      );
+    } catch (error) {
+      $("visualization").textContent = "Timeline non disponibile. Puoi continuare a usare la tabella di programmazione.";
+      console.error("Timeline initialization failed", error);
+    }
+    renderSchedule();
+    return { getState: () => state, destroy: () => timeline.destroy?.() };
+  }
+  initApp();
+})();
