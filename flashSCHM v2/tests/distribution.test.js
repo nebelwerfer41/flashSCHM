@@ -19,7 +19,7 @@ class Element {
 }
 const descendants=node=>[node,...node.children.filter(n=>n instanceof Element).flatMap(descendants)];
 function boot(vis) {
-  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','defaultReady','applyDefaultReady','readyStatus','generate','export','xlsImportInput','ioStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics'];
+  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','defaultReady','applyDefaultReady','readyStatus','generate','export','xlsImportInput','ioStatus','exportStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics','versionName','saveSchedule','versionStatus','versionsEmpty','savedSchedules'];
   const nodes=Object.fromEntries(ids.map(id=>[id,new Element('div')]));
   const document={
     createElement:tag=>new Element(tag), getElementById:id=>nodes[id],
@@ -76,4 +76,20 @@ test('global READY applies to new actors and only overwrites existing actors on 
   nodes.applyDefaultReady.events.click();
   assert.deepEqual(readyFields().map(n=>n.value),['09:30','09:30']);
   assert.match(nodes.readyStatus.textContent,/2 attori/);
+});
+test('saved versions can be opened and deleted in the double-click build',()=>{
+  const nodes=boot();
+  nodes.addActor.events.click();
+  const name=descendants(nodes.actorRows).find(n=>n.attributes['aria-label']==='Attore');
+  name.value='Original';name.events.input();
+  nodes.versionName.value='First plan';
+  nodes.saveSchedule.events.click();
+  assert.equal(nodes.savedSchedules.children.length,1);
+  assert.match(nodes.exportStatus.textContent,/non ancora esportate/);
+  name.value='Edited';name.events.input();
+  const buttons=descendants(nodes.savedSchedules.children[0]).filter(n=>n.tag==='button');
+  buttons.find(n=>n.textContent==='Apri').events.click();
+  assert.equal(descendants(nodes.actorRows).find(n=>n.attributes['aria-label']==='Attore').value,'Original');
+  buttons.find(n=>n.textContent==='Elimina').events.click();
+  assert.equal(nodes.savedSchedules.children.length,0);
 });

@@ -24,6 +24,10 @@ const actorColumns = [
   "DurataCapelli",
   "DurataCostumi",
 ];
+const scheduleColumns = [
+  "IDVersione", "Versione", "SalvataIl", "IDAttore", "Attore",
+  "READY", "Arrivo", "Reparto", "Inizio", "Fine", "Professionista",
+];
 
 function editableInteger(value, fallback, minimum, label, rowNumber) {
   if (value === "" || value === undefined || value === null) return fallback;
@@ -112,12 +116,13 @@ function applyActorRows(state, rows) {
 export function parseRows({ Actors, Depts = [], FlashSCHM = [] }) {
   if (FlashSCHM.length) {
     const version = Number(FlashSCHM[0].Version);
-    if (![2, 3].includes(version))
+    if (![2, 3, 4].includes(version))
       throw new Error("unsupported-file-version");
     const state = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
     validateProject(state);
     state.settings.defaultReady ??= DEFAULT_READY;
-    if (version === 3 || (version === 2 && Actors)) {
+    state.savedSchedules ??= [];
+    if (version >= 3 || (version === 2 && Actors)) {
       let editableRows = Actors;
       if (version === 2) {
         if (Actors.length !== state.actors.length)
@@ -222,6 +227,25 @@ export function serializeRows(state) {
           a.tasks.find((t) => t.type === type)?.duration || 0;
       return row;
     }),
+    Programmazioni: state.savedSchedules.flatMap((version) =>
+      version.plan.actors.flatMap((actor) =>
+        actor.schedule.map((task) => ({
+          IDVersione: version.id,
+          Versione: version.name,
+          SalvataIl: version.savedAt,
+          IDAttore: actor.id,
+          Attore: actor.name,
+          READY: formatTime(actor.ready),
+          Arrivo: actor.arrival == null ? "" : formatTime(actor.arrival),
+          Reparto: task.type,
+          Inizio: formatTime(task.start),
+          Fine: formatTime(task.end),
+          Professionista: version.plan.professionals[task.type].find(
+            (professional) => professional.id === task.professionalId,
+          )?.name || "",
+        })),
+      ),
+    ),
     Depts: DEPARTMENTS.map((type) => ({
       Reparto: type,
       NumeroProfessionisti: state.professionals[type].length,
@@ -233,7 +257,7 @@ export function serializeRows(state) {
         (order ? 3 - order.order.indexOf(type) : DEPARTMENTS.indexOf(type) + 1),
     })),
     FlashSCHM: (JSON.stringify(state).match(/[\s\S]{1,30000}/g) || []).map(
-      (Data) => ({ Version: 3, Data }),
+      (Data) => ({ Version: 4, Data }),
     ),
   };
 }
@@ -346,6 +370,21 @@ export function validateProject(state) {
       scheduled.add(t.id);
     }
   }
+  if (state.savedSchedules !== undefined) {
+    if (!Array.isArray(state.savedSchedules)) throw new Error("invalid-saved-schedules");
+    const versionIds = new Set();
+    for (const version of state.savedSchedules) {
+      if (
+        !version || typeof version.id !== "string" || !version.id ||
+        versionIds.has(version.id) || typeof version.name !== "string" ||
+        !version.name.trim() || typeof version.savedAt !== "string" ||
+        !Number.isFinite(Date.parse(version.savedAt)) || !version.plan ||
+        Object.hasOwn(version.plan, "savedSchedules")
+      ) throw new Error("invalid-saved-schedules");
+      versionIds.add(version.id);
+      validateProject(version.plan);
+    }
+  }
 }
 export function readWorkbook(XLSX, buffer) {
   const workbook = XLSX.read(buffer, { type: "array" }),
@@ -361,11 +400,12 @@ export function writeWorkbook(XLSX, state) {
   const book = XLSX.utils.book_new();
   for (const [name, rows] of Object.entries(serializeRows(state))) {
     const sheet =
-      name === "Actors" && rows.length === 0
-        ? XLSX.utils.aoa_to_sheet([actorColumns])
+      (name === "Actors" || name === "Programmazioni") && rows.length === 0
+        ? XLSX.utils.aoa_to_sheet([name === "Actors" ? actorColumns : scheduleColumns])
         : XLSX.utils.json_to_sheet(
             rows,
-            name === "Actors" ? { header: actorColumns } : undefined,
+            name === "Actors" ? { header: actorColumns } :
+              name === "Programmazioni" ? { header: scheduleColumns } : undefined,
           );
     if (name === "Actors") {
       sheet["!cols"] = [
@@ -379,8 +419,16 @@ export function writeWorkbook(XLSX, state) {
       ];
       if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
     }
+    if (name === "Programmazioni") {
+      sheet["!cols"] = [
+        { wch: 38 }, { wch: 24 }, { wch: 22 }, { wch: 38 },
+        { wch: 26 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
+        { wch: 10 }, { wch: 10 }, { wch: 24 },
+      ];
+      if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
+    }
     XLSX.utils.book_append_sheet(book, sheet, name);
   }
-  book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 1 }, { Hidden: 1 }] };
+  book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 0 }, { Hidden: 1 }, { Hidden: 1 }] };
   return book;
 }

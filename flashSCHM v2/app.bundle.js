@@ -58,7 +58,8 @@
           strength: "preferred"
         }
       ],
-      diagnostics: []
+      diagnostics: [],
+      savedSchedules: []
     };
   }
 
@@ -605,6 +606,19 @@
     "DurataCapelli",
     "DurataCostumi"
   ];
+  var scheduleColumns = [
+    "IDVersione",
+    "Versione",
+    "SalvataIl",
+    "IDAttore",
+    "Attore",
+    "READY",
+    "Arrivo",
+    "Reparto",
+    "Inizio",
+    "Fine",
+    "Professionista"
+  ];
   function editableInteger(value, fallback, minimum, label, rowNumber) {
     if (value === "" || value === void 0 || value === null) return fallback;
     const number = Number(value);
@@ -673,12 +687,13 @@
     var _a;
     if (FlashSCHM.length) {
       const version = Number(FlashSCHM[0].Version);
-      if (![2, 3].includes(version))
+      if (![2, 3, 4].includes(version))
         throw new Error("unsupported-file-version");
       const state2 = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
       validateProject(state2);
       (_a = state2.settings).defaultReady ?? (_a.defaultReady = DEFAULT_READY);
-      if (version === 3 || version === 2 && Actors) {
+      state2.savedSchedules ?? (state2.savedSchedules = []);
+      if (version >= 3 || version === 2 && Actors) {
         let editableRows = Actors;
         if (version === 2) {
           if (Actors.length !== state2.actors.length)
@@ -770,6 +785,25 @@
           row[durationColumns[type]] = a.tasks.find((t) => t.type === type)?.duration || 0;
         return row;
       }),
+      Programmazioni: state.savedSchedules.flatMap(
+        (version) => version.plan.actors.flatMap(
+          (actor) => actor.schedule.map((task) => ({
+            IDVersione: version.id,
+            Versione: version.name,
+            SalvataIl: version.savedAt,
+            IDAttore: actor.id,
+            Attore: actor.name,
+            READY: formatTime(actor.ready),
+            Arrivo: actor.arrival == null ? "" : formatTime(actor.arrival),
+            Reparto: task.type,
+            Inizio: formatTime(task.start),
+            Fine: formatTime(task.end),
+            Professionista: version.plan.professionals[task.type].find(
+              (professional) => professional.id === task.professionalId
+            )?.name || ""
+          }))
+        )
+      ),
       Depts: DEPARTMENTS.map((type) => ({
         Reparto: type,
         NumeroProfessionisti: state.professionals[type].length,
@@ -777,7 +811,7 @@
         Priorita: order?.legacyWeights?.[type] || (order ? 3 - order.order.indexOf(type) : DEPARTMENTS.indexOf(type) + 1)
       })),
       FlashSCHM: (JSON.stringify(state).match(/[\s\S]{1,30000}/g) || []).map(
-        (Data) => ({ Version: 3, Data })
+        (Data) => ({ Version: 4, Data })
       )
     };
   }
@@ -837,6 +871,15 @@
         scheduled.add(t.id);
       }
     }
+    if (state.savedSchedules !== void 0) {
+      if (!Array.isArray(state.savedSchedules)) throw new Error("invalid-saved-schedules");
+      const versionIds = /* @__PURE__ */ new Set();
+      for (const version of state.savedSchedules) {
+        if (!version || typeof version.id !== "string" || !version.id || versionIds.has(version.id) || typeof version.name !== "string" || !version.name.trim() || typeof version.savedAt !== "string" || !Number.isFinite(Date.parse(version.savedAt)) || !version.plan || Object.hasOwn(version.plan, "savedSchedules")) throw new Error("invalid-saved-schedules");
+        versionIds.add(version.id);
+        validateProject(version.plan);
+      }
+    }
   }
   function readWorkbook(XLSX, buffer) {
     const workbook = XLSX.read(buffer, { type: "array" }), rows = {};
@@ -850,9 +893,9 @@
   function writeWorkbook(XLSX, state) {
     const book = XLSX.utils.book_new();
     for (const [name, rows] of Object.entries(serializeRows(state))) {
-      const sheet = name === "Actors" && rows.length === 0 ? XLSX.utils.aoa_to_sheet([actorColumns]) : XLSX.utils.json_to_sheet(
+      const sheet = (name === "Actors" || name === "Programmazioni") && rows.length === 0 ? XLSX.utils.aoa_to_sheet([name === "Actors" ? actorColumns : scheduleColumns]) : XLSX.utils.json_to_sheet(
         rows,
-        name === "Actors" ? { header: actorColumns } : void 0
+        name === "Actors" ? { header: actorColumns } : name === "Programmazioni" ? { header: scheduleColumns } : void 0
       );
       if (name === "Actors") {
         sheet["!cols"] = [
@@ -866,10 +909,55 @@
         ];
         if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
       }
+      if (name === "Programmazioni") {
+        sheet["!cols"] = [
+          { wch: 38 },
+          { wch: 24 },
+          { wch: 22 },
+          { wch: 38 },
+          { wch: 26 },
+          { wch: 10 },
+          { wch: 10 },
+          { wch: 14 },
+          { wch: 10 },
+          { wch: 10 },
+          { wch: 24 }
+        ];
+        if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
+      }
       XLSX.utils.book_append_sheet(book, sheet, name);
     }
-    book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 1 }, { Hidden: 1 }] };
+    book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 0 }, { Hidden: 1 }, { Hidden: 1 }] };
     return book;
+  }
+
+  // js/versions.js
+  var copy = (value) => JSON.parse(JSON.stringify(value));
+  function snapshotPlan(state) {
+    const { savedSchedules, ...plan } = state;
+    return copy(plan);
+  }
+  function saveSchedule(state, name, savedAt = (/* @__PURE__ */ new Date()).toISOString()) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("Inserisci un nome per la versione.");
+    const version = {
+      id: newId(),
+      name: trimmed,
+      savedAt,
+      plan: snapshotPlan(state)
+    };
+    state.savedSchedules.push(version);
+    return version;
+  }
+  function openSchedule(state, id) {
+    const version = state.savedSchedules.find((item) => item.id === id);
+    if (!version) throw new Error("Versione non trovata.");
+    return { ...copy(version.plan), savedSchedules: state.savedSchedules };
+  }
+  function deleteSchedule(state, id) {
+    const index = state.savedSchedules.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error("Versione non trovata.");
+    state.savedSchedules.splice(index, 1);
   }
 
   // js/ui/dom.js
@@ -1284,10 +1372,49 @@
 
   // js/app.js
   function initApp() {
-    let state = createState(), stale = false;
+    let state = createState(), stale = false, exportPending = true;
     const $ = (id) => document.getElementById(id);
     let timeline = { render() {
     } };
+    function renderExportStatus() {
+      $("exportStatus").textContent = exportPending ? "Modifiche non ancora esportate. Esporta l\u2019XLSX prima di chiudere." : "Progetto esportato. Nessuna modifica da esportare.";
+      $("exportStatus").setAttribute("data-pending", String(exportPending));
+    }
+    function markDirty() {
+      exportPending = true;
+      renderExportStatus();
+    }
+    function renderVersions() {
+      $("savedSchedules").replaceChildren(
+        ...state.savedSchedules.map(
+          (version) => el(
+            "li",
+            {},
+            el(
+              "div",
+              { className: "version-details" },
+              el("strong", { text: version.name }),
+              el("small", { text: new Date(version.savedAt).toLocaleString("it-IT") })
+            ),
+            button("Apri", () => {
+              state = openSchedule(state, version.id);
+              stale = false;
+              markDirty();
+              renderConfiguration();
+              renderSchedule(true);
+              $("versionStatus").textContent = `Versione \u201C${version.name}\u201D aperta come piano modificabile.`;
+            }),
+            button("Elimina", () => {
+              deleteSchedule(state, version.id);
+              markDirty();
+              renderVersions();
+              $("versionStatus").textContent = `Versione \u201C${version.name}\u201D eliminata.`;
+            })
+          )
+        )
+      );
+      $("versionsEmpty").hidden = state.savedSchedules.length > 0;
+    }
     function renderSchedule(fit = false) {
       renderTable($("scheduleTableBody"), state, {
         showEnd: $("showStartEndCheckbox").checked,
@@ -1302,6 +1429,7 @@
       timeline.render(fit);
     }
     function changed() {
+      markDirty();
       stale = state.actors.some((a) => a.schedule.length > 0);
       state.diagnostics = [];
       renderSchedule();
@@ -1317,6 +1445,7 @@
     function readDefaultReady() {
       try {
         const ready = parseTime($("defaultReady").value);
+        if (state.settings.defaultReady !== ready) markDirty();
         state.settings.defaultReady = ready;
         $("defaultReady").setCustomValidity("");
         $("defaultReady").setAttribute("aria-invalid", "false");
@@ -1397,7 +1526,19 @@
       }
       state.diagnostics = result.diagnostics;
       stale = false;
+      markDirty();
       renderSchedule(true);
+    });
+    $("saveSchedule").addEventListener("click", () => {
+      try {
+        const version = saveSchedule(state, $("versionName").value);
+        $("versionName").value = "";
+        markDirty();
+        renderVersions();
+        $("versionStatus").textContent = `Versione \u201C${version.name}\u201D salvata nel progetto. Esporta l\u2019XLSX per conservarla.`;
+      } catch (error) {
+        $("versionStatus").textContent = error.message;
+      }
     });
     for (const id of ["showStartEndCheckbox", "showProfessionalCheckbox"])
       $(id).addEventListener("change", () => renderSchedule());
@@ -1412,6 +1553,8 @@
           "flash_scheduler_export.xlsx",
           { cellStyles: true }
         );
+        exportPending = false;
+        renderExportStatus();
         $("ioStatus").setAttribute("data-status", "success");
         $("ioStatus").textContent = "Esportazione completata.";
       } catch (error) {
@@ -1431,7 +1574,10 @@
         state = imported;
         state.diagnostics || (state.diagnostics = []);
         stale = false;
+        exportPending = false;
         renderConfiguration();
+        renderVersions();
+        renderExportStatus();
         renderSchedule(true);
         $("ioStatus").setAttribute("data-status", "success");
         $("ioStatus").textContent = "Importazione completata. Se hai modificato gli orari, genera di nuovo la programmazione.";
@@ -1442,12 +1588,17 @@
       event.target.value = "";
     });
     renderConfiguration();
+    renderVersions();
+    renderExportStatus();
     try {
       timeline = createTimeline(
         $("visualization"),
         globalThis.vis,
         () => state,
-        () => renderSchedule()
+        () => {
+          markDirty();
+          renderSchedule();
+        }
       );
     } catch (error) {
       $("visualization").textContent = "Timeline non disponibile. Puoi continuare a usare la tabella di programmazione.";

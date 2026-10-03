@@ -11,6 +11,7 @@ import { detectConflicts } from "./scheduling/conflicts.js";
 import { createTimeline } from "./timeline/timeline.js";
 import { readWorkbook, writeWorkbook } from "./io/xlsx.js";
 import { parseTime, formatTime } from "./utils/time.js";
+import { saveSchedule, openSchedule, deleteSchedule } from "./versions.js";
 import {
   renderActors,
   renderProfessionals,
@@ -18,13 +19,51 @@ import {
   renderDiagnostics,
 } from "./ui/render.js";
 import { renderRuleEditor } from "./ui/rules.js";
-import { button } from "./ui/dom.js";
+import { button, el } from "./ui/dom.js";
 
 export function initApp() {
   let state = createState(),
-    stale = false;
+    stale = false,
+    exportPending = true;
   const $ = (id) => document.getElementById(id);
   let timeline = { render() {} };
+  function renderExportStatus() {
+    $("exportStatus").textContent = exportPending
+      ? "Modifiche non ancora esportate. Esporta l’XLSX prima di chiudere."
+      : "Progetto esportato. Nessuna modifica da esportare.";
+    $("exportStatus").setAttribute("data-pending", String(exportPending));
+  }
+  function markDirty() {
+    exportPending = true;
+    renderExportStatus();
+  }
+  function renderVersions() {
+    $("savedSchedules").replaceChildren(
+      ...state.savedSchedules.map((version) =>
+        el("li", {},
+          el("div", { className: "version-details" },
+            el("strong", { text: version.name }),
+            el("small", { text: new Date(version.savedAt).toLocaleString("it-IT") }),
+          ),
+          button("Apri", () => {
+            state = openSchedule(state, version.id);
+            stale = false;
+            markDirty();
+            renderConfiguration();
+            renderSchedule(true);
+            $("versionStatus").textContent = `Versione “${version.name}” aperta come piano modificabile.`;
+          }),
+          button("Elimina", () => {
+            deleteSchedule(state, version.id);
+            markDirty();
+            renderVersions();
+            $("versionStatus").textContent = `Versione “${version.name}” eliminata.`;
+          }),
+        ),
+      ),
+    );
+    $("versionsEmpty").hidden = state.savedSchedules.length > 0;
+  }
   function renderSchedule(fit = false) {
     renderTable($("scheduleTableBody"), state, {
       showEnd: $("showStartEndCheckbox").checked,
@@ -39,6 +78,7 @@ export function initApp() {
     timeline.render(fit);
   }
   function changed() {
+    markDirty();
     stale = state.actors.some((a) => a.schedule.length > 0);
     state.diagnostics = [];
     renderSchedule();
@@ -54,6 +94,7 @@ export function initApp() {
   function readDefaultReady() {
     try {
       const ready = parseTime($("defaultReady").value);
+      if (state.settings.defaultReady !== ready) markDirty();
       state.settings.defaultReady = ready;
       $("defaultReady").setCustomValidity("");
       $("defaultReady").setAttribute("aria-invalid", "false");
@@ -137,7 +178,19 @@ export function initApp() {
     }
     state.diagnostics = result.diagnostics;
     stale = false;
+    markDirty();
     renderSchedule(true);
+  });
+  $("saveSchedule").addEventListener("click", () => {
+    try {
+      const version = saveSchedule(state, $("versionName").value);
+      $("versionName").value = "";
+      markDirty();
+      renderVersions();
+      $("versionStatus").textContent = `Versione “${version.name}” salvata nel progetto. Esporta l’XLSX per conservarla.`;
+    } catch (error) {
+      $("versionStatus").textContent = error.message;
+    }
   });
   for (const id of ["showStartEndCheckbox", "showProfessionalCheckbox"])
     $(id).addEventListener("change", () => renderSchedule());
@@ -152,6 +205,8 @@ export function initApp() {
         "flash_scheduler_export.xlsx",
         { cellStyles: true },
       );
+      exportPending = false;
+      renderExportStatus();
       $("ioStatus").setAttribute("data-status", "success");
       $("ioStatus").textContent = "Esportazione completata.";
     } catch (error) {
@@ -171,7 +226,10 @@ export function initApp() {
       state = imported;
       state.diagnostics ||= [];
       stale = false;
+      exportPending = false;
       renderConfiguration();
+      renderVersions();
+      renderExportStatus();
       renderSchedule(true);
       $("ioStatus").setAttribute("data-status", "success");
       $("ioStatus").textContent = "Importazione completata. Se hai modificato gli orari, genera di nuovo la programmazione.";
@@ -182,9 +240,14 @@ export function initApp() {
     event.target.value = "";
   });
   renderConfiguration();
+  renderVersions();
+  renderExportStatus();
   try {
     timeline = createTimeline(
-      $("visualization"), globalThis.vis, () => state, () => renderSchedule(),
+      $("visualization"), globalThis.vis, () => state, () => {
+        markDirty();
+        renderSchedule();
+      },
     );
   } catch (error) {
     $("visualization").textContent = "Timeline non disponibile. Puoi continuare a usare la tabella di programmazione.";

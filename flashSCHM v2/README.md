@@ -43,7 +43,8 @@ The page loads the existing SheetJS 0.18.5 dependency and vis-timeline 7.7.3 fro
 3. Generate the schedule. Each actor must finish before READY, on the same day.
 4. Use **Regole avanzate globali** for common rules; actor **Avanzate** controls priority and exceptions. **Preferisci** allows alternatives; **Richiedi** is mandatory. With no professional rule, any available professional can be selected.
 5. Drag or resize a timeline task to edit it manually; changing professional within its own department is allowed. Conflicts remain visible in red and in the diagnostics list. Generate explicitly to replace manual edits with an automatic schedule.
-6. Export XLS saves an `.xlsx` project. Edit names, READY times, priorities and department durations in the visible `Actors` sheet, then import the file to apply them. Keep the hidden `ID` column and hidden sheets intact. You can add rows with an empty ID or delete actor rows. Changes to READY, priorities, durations or row order clear the saved schedule; generate it again after import. Advanced rules and manual schedules remain in the hidden project data. Import also accepts legacy `.xls`/`.xlsx`. Data is held in memory: export before closing or reloading.
+6. Enter a name and choose **Salva programmazione** to keep an independent version of the current plan. **Apri** makes a fresh editable copy; **Elimina** removes a version. The status near Export reports changes not yet exported. Versions live in memory until you export an `.xlsx` project.
+7. Export XLS saves the current plan and all saved versions. The visible `Programmazioni` sheet lists one row per saved activity, with version, actor, READY, arrival, department, start, end and professional. The visible `Actors` sheet remains editable for the current plan: edit names, READY times, priorities and department durations, then import the file to apply them. Keep the hidden `ID` column and hidden sheets intact. You can add rows with an empty ID or delete actor rows. Changes to READY, priorities, durations or row order clear the current schedule; generate it again after import. Saved versions and advanced rules remain in the hidden project data. Import also accepts legacy `.xls`/`.xlsx`.
 
 The normal row contains only Actor, READY, three durations and an Advanced disclosure. Actor exceptions are indicated without exposing their controls. Removing a global rule or disabling it for an actor is explicit; adding an actor rule does not erase other inherited rules.
 
@@ -73,7 +74,7 @@ curl -fsSL https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js -o /tm
 node tests/workbook-check.js /tmp/flashSCHM-xlsx.cjs
 ```
 
-It checks versioned XLSX round trips, hidden metadata, actor edits, metadata exceeding one Excel cell, and legacy XLSX/XLS (BIFF8) imports. The normal unit tests do not access the network.
+It checks versioned XLSX round trips, the visible `Programmazioni` sheet, hidden metadata, actor edits, metadata exceeding one Excel cell, and legacy XLSX/XLS (BIFF8) imports. The normal unit tests do not access the network.
 
 ## Documentation
 

@@ -45,5 +45,6 @@ export function createState() {
       },
     ],
     diagnostics: [],
+    savedSchedules: [],
   };
 }

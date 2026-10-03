@@ -20,6 +20,8 @@
 
 ## 2. Versioni salvate e XLSX leggibile
 
+**Stato: completato.**
+
 **Risultato:** `Salva programmazione` crea una versione con ID, nome e data di salvataggio. Una lista permette di aprire ed eliminare le versioni. L'app segnala modifiche non ancora esportate. Non c'è salvataggio automatico né archivio separato nel browser.
 
 **Interventi:** conservare nel progetto una lista di copie complete dello stato di pianificazione, senza includere ricorsivamente la lista stessa. Ogni copia comprende attori, READY, attività, professionisti, regole, orari generati e modifiche manuali. L'apertura di una versione crea una nuova copia modificabile.
