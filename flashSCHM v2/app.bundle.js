@@ -59,7 +59,8 @@
         }
       ],
       diagnostics: [],
-      savedSchedules: []
+      savedSchedules: [],
+      actorCatalog: []
     };
   }
 
@@ -582,6 +583,131 @@
     return { render, destroy: () => timeline.destroy() };
   }
 
+  // js/catalog.js
+  var CATALOG_COLUMNS = [
+    "ID",
+    "Nome",
+    "DurataTrucco",
+    "DurataCapelli",
+    "DurataCostumi"
+  ];
+  var DURATION_COLUMNS = {
+    trucco: "DurataTrucco",
+    capelli: "DurataCapelli",
+    costumi: "DurataCostumi"
+  };
+  function validateCatalog(catalog) {
+    if (!Array.isArray(catalog)) throw new Error("catalogo non valido");
+    const seen = /* @__PURE__ */ new Set();
+    for (const entry of catalog) {
+      if (!entry || typeof entry.id !== "string" || !entry.id.trim() || seen.has(entry.id) || typeof entry.name !== "string" || !entry.name.trim() || !entry.durations || DEPARTMENTS.some(
+        (type) => !Number.isInteger(entry.durations[type]) || entry.durations[type] < 0
+      )) throw new Error("catalogo non valido: ID, nome o durate mancanti o duplicati");
+      seen.add(entry.id);
+    }
+  }
+  function parseCatalogRows(rows) {
+    if (!Array.isArray(rows)) throw new Error("Scheda Catalogo mancante.");
+    const seen = /* @__PURE__ */ new Set();
+    const entries = rows.filter((row) => CATALOG_COLUMNS.some((column) => String(row[column] ?? "").trim())).map((row, index) => {
+      const line = Number.isInteger(row.__rowNum__) ? row.__rowNum__ + 1 : index + 2;
+      const id = String(row.ID ?? "").trim();
+      const name = String(row.Nome ?? "").trim();
+      if (!id || !name) throw new Error(`Catalogo, riga ${line}: ID e Nome obbligatori.`);
+      if (seen.has(id)) throw new Error(`Catalogo, riga ${line}: ID duplicato.`);
+      seen.add(id);
+      const durations = {};
+      for (const type of DEPARTMENTS) {
+        const column = DURATION_COLUMNS[type];
+        const value = row[column];
+        const number = value === "" || value == null ? 0 : Number(value);
+        if (!Number.isInteger(number) || number < 0)
+          throw new Error(`Catalogo, riga ${line}: ${column} non valido.`);
+        durations[type] = number;
+      }
+      return { id, name, durations };
+    });
+    validateCatalog(entries);
+    return entries;
+  }
+  function serializeCatalogRows(catalog) {
+    validateCatalog(catalog);
+    return catalog.map((entry) => ({
+      ID: entry.id,
+      Nome: entry.name,
+      ...Object.fromEntries(DEPARTMENTS.map((type) => [
+        DURATION_COLUMNS[type],
+        entry.durations[type]
+      ]))
+    }));
+  }
+  function catalogImportPreview(catalog, incoming) {
+    validateCatalog(catalog);
+    validateCatalog(incoming);
+    const existing = new Map(catalog.map((entry) => [entry.id, entry]));
+    return incoming.map((entry) => ({
+      ...entry,
+      status: existing.has(entry.id) ? "existing" : "new"
+    }));
+  }
+  function applyCatalogImport(catalog, incoming, duplicateAction) {
+    const preview = catalogImportPreview(catalog, incoming);
+    if (preview.some((entry) => entry.status === "existing") && !["replace", "keep"].includes(duplicateAction))
+      throw new Error("Scegli come gestire gli ID gi\xE0 presenti.");
+    const next = catalog.map((entry) => ({ ...entry, durations: { ...entry.durations } }));
+    const positions = new Map(next.map((entry, index) => [entry.id, index]));
+    let added = 0, replaced = 0, kept = 0;
+    for (const entry of incoming) {
+      const copy2 = { ...entry, durations: { ...entry.durations } };
+      if (!positions.has(entry.id)) {
+        positions.set(entry.id, next.length);
+        next.push(copy2);
+        added++;
+      } else if (duplicateAction === "replace") {
+        next[positions.get(entry.id)] = copy2;
+        replaced++;
+      } else kept++;
+    }
+    return { catalog: next, added, replaced, kept };
+  }
+  function addCatalogActorsToPlan(state, ids) {
+    const selected = new Set(ids);
+    if (selected.size !== ids.length || !selected.size)
+      throw new Error("Seleziona almeno un attore del catalogo.");
+    const chosen = Array.from(selected, (id) => state.actorCatalog.find((entry) => entry.id === id));
+    if (chosen.some((entry) => !entry)) throw new Error("Attore del catalogo non trovato.");
+    if (chosen.some((entry) => state.actors.some((actor) => actor.catalogId === entry.id)))
+      throw new Error("Un attore selezionato \xE8 gi\xE0 nel piano.");
+    const actors = chosen.map((entry) => {
+      const actor = createActor({
+        name: entry.name,
+        ready: state.settings.defaultReady,
+        catalogId: entry.id
+      });
+      for (const task of actor.tasks) task.duration = entry.durations[task.type];
+      return actor;
+    });
+    state.actors.push(...actors);
+    return actors;
+  }
+  function readCatalogWorkbook(XLSX, buffer) {
+    const workbook = XLSX.read(buffer, { type: "array" });
+    if (!workbook.Sheets.Catalogo) throw new Error("Scheda Catalogo mancante.");
+    const header = XLSX.utils.sheet_to_json(workbook.Sheets.Catalogo, { header: 1 })[0] || [];
+    if (!CATALOG_COLUMNS.every((column) => header.includes(column)))
+      throw new Error(`Catalogo: intestazioni richieste ${CATALOG_COLUMNS.join(", ")}.`);
+    return parseCatalogRows(XLSX.utils.sheet_to_json(workbook.Sheets.Catalogo, { defval: "" }));
+  }
+  function writeCatalogWorkbook(XLSX, catalog) {
+    const rows = serializeCatalogRows(catalog);
+    const workbook = XLSX.utils.book_new();
+    const sheet = rows.length ? XLSX.utils.json_to_sheet(rows, { header: CATALOG_COLUMNS }) : XLSX.utils.aoa_to_sheet([CATALOG_COLUMNS]);
+    sheet["!cols"] = [{ wch: 38 }, { wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+    if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
+    XLSX.utils.book_append_sheet(workbook, sheet, "Catalogo");
+    return workbook;
+  }
+
   // js/io/xlsx.js
   var durationColumns = {
     trucco: "DurataTrucco",
@@ -687,12 +813,13 @@
     var _a;
     if (FlashSCHM.length) {
       const version = Number(FlashSCHM[0].Version);
-      if (![2, 3, 4].includes(version))
+      if (![2, 3, 4, 5].includes(version))
         throw new Error("unsupported-file-version");
       const state2 = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
       validateProject(state2);
       (_a = state2.settings).defaultReady ?? (_a.defaultReady = DEFAULT_READY);
       state2.savedSchedules ?? (state2.savedSchedules = []);
+      state2.actorCatalog ?? (state2.actorCatalog = []);
       if (version >= 3 || version === 2 && Actors) {
         let editableRows = Actors;
         if (version === 2) {
@@ -811,13 +938,14 @@
         Priorita: order?.legacyWeights?.[type] || (order ? 3 - order.order.indexOf(type) : DEPARTMENTS.indexOf(type) + 1)
       })),
       FlashSCHM: (JSON.stringify(state).match(/[\s\S]{1,30000}/g) || []).map(
-        (Data) => ({ Version: 4, Data })
+        (Data) => ({ Version: 5, Data })
       )
     };
   }
   function validateProject(state) {
     if (!state || !Array.isArray(state.actors) || !Array.isArray(state.rules) || !state.professionals || !state.settings || state.settings.defaultReady !== void 0 && (!Number.isInteger(state.settings.defaultReady) || state.settings.defaultReady < 0 || state.settings.defaultReady >= 1440))
       throw new Error("invalid-project");
+    if (state.actorCatalog !== void 0) validateCatalog(state.actorCatalog);
     const ids = /* @__PURE__ */ new Set();
     const identify = (id) => {
       if (typeof id !== "string" || !id || ids.has(id))
@@ -854,7 +982,7 @@
     checkRules(state.rules);
     for (const a of state.actors) {
       identify(a.id);
-      if (typeof a.name !== "string" || !Number.isInteger(a.ready) || a.ready < 0 || a.ready >= 1440 || !Number.isInteger(a.priority) || a.priority < 1 || !Array.isArray(a.tasks) || !Array.isArray(a.schedule) || !a.rules || !Array.isArray(a.rules.disabled))
+      if (typeof a.name !== "string" || !Number.isInteger(a.ready) || a.ready < 0 || a.ready >= 1440 || !Number.isInteger(a.priority) || a.priority < 1 || !Array.isArray(a.tasks) || !Array.isArray(a.schedule) || !a.rules || !Array.isArray(a.rules.disabled) || a.catalogId !== void 0 && (typeof a.catalogId !== "string" || !a.catalogId))
         throw new Error("invalid-actor");
       checkRules(a.rules.add);
       for (const t of a.tasks) {
@@ -934,7 +1062,7 @@
   // js/versions.js
   var copy = (value) => JSON.parse(JSON.stringify(value));
   function snapshotPlan(state) {
-    const { savedSchedules, ...plan } = state;
+    const { savedSchedules, actorCatalog, ...plan } = state;
     return copy(plan);
   }
   function saveSchedule(state, name, savedAt = (/* @__PURE__ */ new Date()).toISOString()) {
@@ -952,7 +1080,11 @@
   function openSchedule(state, id) {
     const version = state.savedSchedules.find((item) => item.id === id);
     if (!version) throw new Error("Versione non trovata.");
-    return { ...copy(version.plan), savedSchedules: state.savedSchedules };
+    return {
+      ...copy(version.plan),
+      savedSchedules: state.savedSchedules,
+      actorCatalog: state.actorCatalog
+    };
   }
   function deleteSchedule(state, id) {
     const index = state.savedSchedules.findIndex((item) => item.id === id);
@@ -1373,9 +1505,77 @@
   // js/app.js
   function initApp() {
     let state = createState(), stale = false, exportPending = true;
+    let pendingCatalog = null;
+    const selectedCatalogIds = /* @__PURE__ */ new Set();
     const $ = (id) => document.getElementById(id);
     let timeline = { render() {
     } };
+    const catalogDurations = (entry) => DEPARTMENTS.map((type) => `${LABELS[type]} ${entry.durations[type]} min`).join(" \xB7 ");
+    function renderCatalogSelection() {
+      $("addCatalogActors").disabled = selectedCatalogIds.size === 0;
+      $("addCatalogActors").textContent = selectedCatalogIds.size ? `Aggiungi ${selectedCatalogIds.size} al piano` : "Aggiungi selezionati al piano";
+    }
+    function renderCatalog() {
+      const query = $("catalogSearch").value.trim().toLocaleLowerCase("it-IT");
+      const inPlan = new Set(state.actors.map((actor) => actor.catalogId));
+      for (const id of selectedCatalogIds)
+        if (!state.actorCatalog.some((entry) => entry.id === id) || inPlan.has(id))
+          selectedCatalogIds.delete(id);
+      const visible = state.actorCatalog.filter((entry) => `${entry.name} ${entry.id}`.toLocaleLowerCase("it-IT").includes(query));
+      $("catalogCount").textContent = String(state.actorCatalog.length);
+      $("catalogList").replaceChildren(...visible.map((entry) => {
+        const checkbox = el("input", {
+          type: "checkbox",
+          checked: selectedCatalogIds.has(entry.id),
+          disabled: inPlan.has(entry.id),
+          "aria-label": `Seleziona ${entry.name}`
+        });
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) selectedCatalogIds.add(entry.id);
+          else selectedCatalogIds.delete(entry.id);
+          renderCatalogSelection();
+        });
+        return el(
+          "li",
+          {},
+          el(
+            "label",
+            { className: "catalog-choice" },
+            checkbox,
+            el(
+              "span",
+              {},
+              el("strong", { text: entry.name }),
+              el("small", { text: `${entry.id} \xB7 ${catalogDurations(entry)}${inPlan.has(entry.id) ? " \xB7 Gi\xE0 nel piano" : ""}` })
+            )
+          )
+        );
+      }));
+      $("catalogEmpty").hidden = visible.length > 0;
+      $("catalogEmpty").textContent = state.actorCatalog.length ? "Nessun attore corrisponde alla ricerca." : "Il catalogo \xE8 vuoto. Esporta un modello XLSX, compilalo e reimportalo.";
+      renderCatalogSelection();
+    }
+    function renderCatalogPreview() {
+      $("catalogPreview").hidden = !pendingCatalog;
+      if (!pendingCatalog) return;
+      const preview = catalogImportPreview(state.actorCatalog, pendingCatalog);
+      const duplicates = preview.filter((entry) => entry.status === "existing").length;
+      $("catalogPreviewStatus").textContent = `${preview.length} schede nel file: ${preview.length - duplicates} nuove, ${duplicates} con ID gi\xE0 presente.`;
+      $("catalogPreviewRows").replaceChildren(...preview.map((entry) => {
+        const existing = state.actorCatalog.find((item) => item.id === entry.id);
+        return el(
+          "li",
+          {},
+          el("strong", { text: entry.name }),
+          el("small", { text: `${entry.id} \xB7 ${catalogDurations(entry)} \xB7 ${entry.status === "existing" ? "ID gi\xE0 presente" : "Nuovo"}` }),
+          ...existing ? [el("small", {
+            text: `Nel catalogo: ${existing.name} \xB7 ${catalogDurations(existing)}`
+          })] : []
+        );
+      }));
+      $("duplicateActionLabel").hidden = duplicates === 0;
+      $("applyCatalogImport").disabled = !preview.length || duplicates > 0 && !$("duplicateAction").value;
+    }
     function renderExportStatus() {
       $("exportStatus").textContent = exportPending ? "Modifiche non ancora esportate. Esporta l\u2019XLSX prima di chiudere." : "Progetto esportato. Nessuna modifica da esportare.";
       $("exportStatus").setAttribute("data-pending", String(exportPending));
@@ -1401,6 +1601,7 @@
               stale = false;
               markDirty();
               renderConfiguration();
+              renderCatalog();
               renderSchedule(true);
               $("versionStatus").textContent = `Versione \u201C${version.name}\u201D aperta come piano modificabile.`;
             }),
@@ -1488,6 +1689,7 @@
         state.actors = state.actors.filter((a) => a.id !== id);
         changed();
         renderActorRows();
+        renderCatalog();
       });
     }
     $("defaultReady").addEventListener("change", () => {
@@ -1512,6 +1714,75 @@
       changed();
       renderActorRows();
       $("actorRows").lastElementChild?.querySelector("input")?.focus();
+    });
+    $("catalogSearch").addEventListener("input", renderCatalog);
+    $("duplicateAction").addEventListener("change", renderCatalogPreview);
+    $("catalogImportInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        if (!globalThis.XLSX)
+          throw new Error("Libreria XLS non disponibile. Verifica la connessione.");
+        pendingCatalog = readCatalogWorkbook(globalThis.XLSX, await file.arrayBuffer());
+        $("duplicateAction").value = "";
+        renderCatalogPreview();
+        $("catalogStatus").textContent = "Controlla l\u2019anteprima e applica l\u2019importazione.";
+      } catch (error) {
+        pendingCatalog = null;
+        renderCatalogPreview();
+        $("catalogStatus").textContent = `Importazione catalogo non riuscita: ${error.message}`;
+      }
+      event.target.value = "";
+    });
+    $("applyCatalogImport").addEventListener("click", () => {
+      if (!pendingCatalog) return;
+      try {
+        const result = applyCatalogImport(
+          state.actorCatalog,
+          pendingCatalog,
+          $("duplicateAction").value
+        );
+        state.actorCatalog = result.catalog;
+        pendingCatalog = null;
+        selectedCatalogIds.clear();
+        renderCatalogPreview();
+        renderCatalog();
+        markDirty();
+        $("catalogStatus").textContent = `Catalogo aggiornato: ${result.added} nuove, ${result.replaced} aggiornate, ${result.kept} mantenute. Esporta il catalogo XLSX per conservarlo.`;
+      } catch (error) {
+        $("catalogStatus").textContent = error.message;
+      }
+    });
+    $("cancelCatalogImport").addEventListener("click", () => {
+      pendingCatalog = null;
+      renderCatalogPreview();
+      $("catalogStatus").textContent = "Importazione catalogo annullata.";
+    });
+    $("catalogExport").addEventListener("click", () => {
+      try {
+        if (!globalThis.XLSX)
+          throw new Error("Libreria XLS non disponibile. Verifica la connessione.");
+        globalThis.XLSX.writeFile(
+          writeCatalogWorkbook(globalThis.XLSX, state.actorCatalog),
+          "flash_schm_catalogo_attori.xlsx"
+        );
+        $("catalogStatus").textContent = "Catalogo XLSX esportato.";
+      } catch (error) {
+        $("catalogStatus").textContent = `Esportazione catalogo non riuscita: ${error.message}`;
+      }
+    });
+    $("addCatalogActors").addEventListener("click", () => {
+      try {
+        if (readDefaultReady() === null) return;
+        const count = addCatalogActorsToPlan(state, Array.from(selectedCatalogIds)).length;
+        selectedCatalogIds.clear();
+        changed();
+        renderActorRows();
+        renderCatalog();
+        $("catalogStatus").textContent = `${count} attori aggiunti al piano con il READY predefinito.`;
+      } catch (error) {
+        $("catalogStatus").textContent = error.message;
+      }
     });
     $("generate").addEventListener("click", () => {
       if ([...document.querySelectorAll("input")].some(
@@ -1577,6 +1848,10 @@
         exportPending = false;
         renderConfiguration();
         renderVersions();
+        selectedCatalogIds.clear();
+        pendingCatalog = null;
+        renderCatalogPreview();
+        renderCatalog();
         renderExportStatus();
         renderSchedule(true);
         $("ioStatus").setAttribute("data-status", "success");
@@ -1589,6 +1864,8 @@
     });
     renderConfiguration();
     renderVersions();
+    renderCatalog();
+    renderCatalogPreview();
     renderExportStatus();
     try {
       timeline = createTimeline(

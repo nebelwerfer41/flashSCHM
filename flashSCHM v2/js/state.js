@@ -46,5 +46,6 @@ export function createState() {
     ],
     diagnostics: [],
     savedSchedules: [],
+    actorCatalog: [],
   };
 }

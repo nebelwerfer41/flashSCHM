@@ -32,6 +32,8 @@ L'export XLSX aggiunge una sola scheda visibile `Programmazioni`, con una riga p
 
 ## 3. Catalogo attori
 
+**Stato: completato.**
+
 **Risultato:** importare un file XLSX di catalogo, cercare e selezionare più attori, aggiungerli al piano con il READY predefinito. Il catalogo registra almeno un ID stabile, nome e durate abituali. Una funzione di export permette di aggiornare e conservare il catalogo come file separato.
 
 **Interventi:** distinguere l'ID della scheda catalogo dall'ID dell'attore nel piano; mostrare un'anteprima dell'importazione e gestire gli ID duplicati prima di applicarla. Le regole specifiche e i valori aggiuntivi si aggiungono solo quando emerge un caso concreto.

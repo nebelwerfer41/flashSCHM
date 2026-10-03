@@ -78,6 +78,22 @@ details[open] > summary { margin-bottom: var(--space-4); }
 .version-list li { display: flex; align-items: center; gap: var(--space-2); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .version-details { flex: 1; min-width: 0; }
 .version-details strong { display: block; overflow-wrap: anywhere; }
+.catalog-panel { margin-top: var(--space-4); }
+.catalog-actions, .catalog-picker { display: flex; align-items: end; gap: var(--space-3); flex-wrap: wrap; }
+.catalog-picker { margin-top: var(--space-4); }
+.catalog-picker label { flex: 1 1 240px; max-width: 400px; }
+.catalog-picker input { width: 100%; }
+#catalogStatus:not(:empty), #catalogEmpty, #catalogPreviewStatus { margin-top: var(--space-3); font-size: var(--text-sm); }
+.catalog-preview { margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.catalog-preview[hidden], #duplicateActionLabel[hidden], #catalogEmpty[hidden] { display: none; }
+.catalog-preview .catalog-actions { margin-top: var(--space-3); }
+#duplicateActionLabel { max-width: 360px; margin-top: var(--space-3); }
+#duplicateActionLabel select { width: 100%; }
+.catalog-list { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-2); max-height: 340px; overflow: auto; }
+.catalog-list li { padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.catalog-list li strong { display: block; }
+.catalog-list li small { overflow-wrap: anywhere; }
+.catalog-choice { flex-direction: row; align-items: center; gap: var(--space-3); cursor: pointer; font-size: var(--text-sm); }
 footer { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: var(--text-xs); padding: 20px 0 4px; }
 /* 3. Actor entry */
 .ready-default { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-3); padding: 12px 14px; margin-bottom: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }

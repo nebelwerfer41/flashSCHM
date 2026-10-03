@@ -1,5 +1,9 @@
 # Refactoring and verification report
 
+## Roadmap phase 3: actor catalog
+
+The project now stores a catalog separately from its current plan and saved plan snapshots. Standalone `Catalogo` XLSX files carry stable catalog IDs, names and usual department durations. Import previews every entry; an ID already present requires an explicit keep or replace decision. Multi-select adds independent actor copies with new plan IDs and the current default READY. Project format 5 retains the catalog in metadata; versions 2–4 still import. Automated tests cover duplicate handling, copy independence, backward import and actual SheetJS catalog/project workbook round trips. The shipped classic bundle includes the catalog UI.
+
 ## Architecture and engine
 
 Five globally coupled source files were incrementally separated into a vanilla ES-module controller, pure time/rule/scheduling/conflict functions, state-driven DOM views, and timeline/SheetJS adapters. Legacy sources are retained only as immutable test fixtures. The baseline audit and characterization tests were added before the engine extraction.

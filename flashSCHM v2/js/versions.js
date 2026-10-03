@@ -3,7 +3,7 @@ import { newId } from "./state.js";
 const copy = (value) => JSON.parse(JSON.stringify(value));
 
 export function snapshotPlan(state) {
-  const { savedSchedules, ...plan } = state;
+  const { savedSchedules, actorCatalog, ...plan } = state;
   return copy(plan);
 }
 
@@ -23,7 +23,11 @@ export function saveSchedule(state, name, savedAt = new Date().toISOString()) {
 export function openSchedule(state, id) {
   const version = state.savedSchedules.find((item) => item.id === id);
   if (!version) throw new Error("Versione non trovata.");
-  return { ...copy(version.plan), savedSchedules: state.savedSchedules };
+  return {
+    ...copy(version.plan),
+    savedSchedules: state.savedSchedules,
+    actorCatalog: state.actorCatalog,
+  };
 }
 
 export function deleteSchedule(state, id) {

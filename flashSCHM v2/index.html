@@ -29,6 +29,20 @@
       <p id="readyStatus" class="ready-status" role="status" aria-live="polite"></p>
       <div id="actorRows"></div>
     </section>
+    <section class="panel catalog-panel" aria-labelledby="catalogTitle">
+      <div class="section-header"><div><span class="eyebrow">CATALOGO</span><h2 id="catalogTitle">Catalogo attori <span id="catalogCount" class="count">0</span></h2><p>Conserva nomi e durate abituali in un XLSX separato. Gli attori aggiunti al piano restano indipendenti.</p></div></div>
+      <div class="catalog-actions"><label class="import-button" for="catalogImportInput">Importa catalogo XLSX<input class="file-input" type="file" id="catalogImportInput" accept=".xlsx" /></label><button id="catalogExport" type="button">Esporta catalogo XLSX</button></div>
+      <p id="catalogStatus" role="status" aria-live="polite"></p>
+      <div id="catalogPreview" class="catalog-preview" hidden>
+        <h3>Anteprima importazione</h3><p id="catalogPreviewStatus"></p>
+        <ul id="catalogPreviewRows" class="catalog-list"></ul>
+        <label id="duplicateActionLabel" for="duplicateAction">ID già presenti<select id="duplicateAction"><option value="">Scegli come gestirli</option><option value="replace">Aggiorna le schede esistenti</option><option value="keep">Mantieni le schede esistenti</option></select></label>
+        <div class="catalog-actions"><button id="applyCatalogImport" type="button" disabled>Applica importazione</button><button id="cancelCatalogImport" type="button">Annulla</button></div>
+      </div>
+      <div class="catalog-picker"><label for="catalogSearch">Cerca nel catalogo<input id="catalogSearch" type="search" placeholder="Nome o ID" /></label><button id="addCatalogActors" type="button" disabled>Aggiungi selezionati al piano</button></div>
+      <p id="catalogEmpty">Il catalogo è vuoto. Esporta un modello XLSX, compilalo e reimportalo.</p>
+      <ul id="catalogList" class="catalog-list"></ul>
+    </section>
     <div class="configuration-grid">
       <section class="panel" aria-labelledby="professionalsTitle"><details open><summary><h2 id="professionalsTitle">Professionisti</h2><span class="summary-hint">Capacità dei reparti</span></summary><p class="section-help">Aggiungi i professionisti per limitarne la disponibilità. Senza nomi, il reparto ha capacità libera.</p><div id="professionalSettings" class="professional-grid"></div></details></section>
       <section class="panel" aria-labelledby="rulesTitle"><details><summary><h2 id="rulesTitle">Regole globali</h2><span class="summary-hint">Preferenze e vincoli</span></summary><p class="section-help">“Preferisci” ammette alternative. “Richiedi” impone un vincolo. Le regole si applicano a tutti gli attori, salvo eccezioni.</p><div id="globalRules"></div></details></section>

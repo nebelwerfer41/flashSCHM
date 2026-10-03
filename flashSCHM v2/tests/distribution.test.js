@@ -7,7 +7,7 @@ import vm from 'node:vm';
 class Element {
   constructor(tag) {
     this.tag=tag; this.children=[]; this.events={}; this.attributes={};
-    this.value=''; this.checked=false; this.textContent='';
+    this.value=''; this.checked=false; this.disabled=false; this.hidden=false; this.textContent='';
   }
   get childNodes() { return this.children; }
   append(...children) { this.children.push(...children); }
@@ -18,14 +18,14 @@ class Element {
   setCustomValidity() {}
 }
 const descendants=node=>[node,...node.children.filter(n=>n instanceof Element).flatMap(descendants)];
-function boot(vis) {
-  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','defaultReady','applyDefaultReady','readyStatus','generate','export','xlsImportInput','ioStatus','exportStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics','versionName','saveSchedule','versionStatus','versionsEmpty','savedSchedules'];
+function boot(vis, XLSX) {
+  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','defaultReady','applyDefaultReady','readyStatus','generate','export','xlsImportInput','ioStatus','exportStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics','versionName','saveSchedule','versionStatus','versionsEmpty','savedSchedules','catalogCount','catalogImportInput','catalogExport','catalogStatus','catalogPreview','catalogPreviewStatus','catalogPreviewRows','duplicateActionLabel','duplicateAction','applyCatalogImport','cancelCatalogImport','catalogSearch','addCatalogActors','catalogEmpty','catalogList'];
   const nodes=Object.fromEntries(ids.map(id=>[id,new Element('div')]));
   const document={
     createElement:tag=>new Element(tag), getElementById:id=>nodes[id],
     querySelectorAll:()=>Object.values(nodes).flatMap(descendants).filter(n=>n.tag==='input'),
   };
-  const context=vm.createContext({document,vis,console:{error(){}},crypto:undefined});
+  const context=vm.createContext({document,vis,XLSX,console:{error(){}},crypto:undefined});
   vm.runInContext(readFileSync(new URL('../app.bundle.js',import.meta.url),'utf8'),context);
   return nodes;
 }
@@ -92,4 +92,37 @@ test('saved versions can be opened and deleted in the double-click build',()=>{
   assert.equal(descendants(nodes.actorRows).find(n=>n.attributes['aria-label']==='Attore').value,'Original');
   buttons.find(n=>n.textContent==='Elimina').events.click();
   assert.equal(nodes.savedSchedules.children.length,0);
+});
+test('catalog import preview requires a collision choice and supports multi-select copies',async()=>{
+  let rows=[
+    {ID:'cast-1',Nome:'Mario',DurataTrucco:20,DurataCapelli:0,DurataCostumi:0},
+    {ID:'cast-2',Nome:'Luigi',DurataTrucco:15,DurataCapelli:10,DurataCostumi:0},
+  ];
+  const XLSX={read:()=>({Sheets:{Catalogo:{}}}),utils:{sheet_to_json:(_sheet,options)=>options?.header===1?[['ID','Nome','DurataTrucco','DurataCapelli','DurataCostumi']]:rows}};
+  const nodes=boot(undefined,XLSX);
+  const file={arrayBuffer:async()=>new ArrayBuffer(0)};
+  await nodes.catalogImportInput.events.change({target:{files:[file],value:'catalog.xlsx'}});
+  assert.equal(nodes.catalogPreview.hidden,false);
+  assert.equal(nodes.catalogPreviewRows.children.length,2);
+  assert.equal(nodes.applyCatalogImport.disabled,false);
+  nodes.applyCatalogImport.events.click();
+  assert.equal(nodes.catalogCount.textContent,'2');
+  nodes.catalogSearch.value='Mario';nodes.catalogSearch.events.input();
+  assert.equal(nodes.catalogList.children.length,1);
+  nodes.catalogSearch.value='';nodes.catalogSearch.events.input();
+  for(const checkbox of descendants(nodes.catalogList).filter(n=>n.tag==='input')){
+    checkbox.checked=true;checkbox.events.change();
+  }
+  nodes.addCatalogActors.events.click();
+  assert.equal(nodes.actorCount.textContent,'2');
+  assert.deepEqual(descendants(nodes.actorRows).filter(n=>n.attributes['aria-label']==='Attore').map(n=>n.value),['Mario','Luigi']);
+  rows=[{ID:'cast-1',Nome:'Mario Updated',DurataTrucco:30}];
+  await nodes.catalogImportInput.events.change({target:{files:[file],value:'catalog.xlsx'}});
+  assert.equal(nodes.applyCatalogImport.disabled,true);
+  assert.match(nodes.catalogPreviewStatus.textContent,/1 con ID già presente/);
+  nodes.duplicateAction.value='replace';nodes.duplicateAction.events.change();
+  assert.equal(nodes.applyCatalogImport.disabled,false);
+  nodes.applyCatalogImport.events.click();
+  assert.equal(descendants(nodes.actorRows).find(n=>n.attributes['aria-label']==='Attore').value,'Mario');
+  assert.match(nodes.catalogList.children[0].children[0].children[1].children[0].textContent,/Mario Updated/);
 });

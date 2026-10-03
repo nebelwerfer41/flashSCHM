@@ -14,10 +14,11 @@
 | `ui/` | DOM rendering and rule controls; human-readable Italian diagnostics |
 | `timeline/timeline.js` | vis datasets, metadata, selection and edit callbacks |
 | `io/xlsx.js` | Pure project/row conversion plus injected SheetJS workbook adapter |
+| `catalog.js` | Catalog row validation, import decisions, plan copies and standalone XLSX adapter |
 
 ## State boundaries
 
-State is `{actors, professionals, settings, rules, diagnostics}`. `settings.defaultReady` is the READY assigned to new actors; the explicit **Applica a tutti** action copies it into existing actors. Each actor keeps an independent `ready` value, so changing the default alone does not alter a generated schedule. Professionals are arrays per department of `{id, name}`. Their order is the explicit fallback selection order. Actor priority and READY determine actor scheduling order, not row position or UUID ordering.
+State is `{actors, professionals, settings, rules, diagnostics, savedSchedules, actorCatalog}`. Catalog entries have `{id, name, durations}`. Adding one to the plan creates a distinct actor ID and stores its catalog ID as `catalogId`; its name and durations are copied. Saved plan snapshots omit the catalog and reopen with the project's current catalog. `settings.defaultReady` is the READY assigned to new actors; the explicit **Applica a tutti** action copies it into existing actors. Each actor keeps an independent `ready` value, so changing the default alone does not alter a generated schedule. Professionals are arrays per department of `{id, name}`. Their order is the explicit fallback selection order. Actor priority and READY determine actor scheduling order, not row position or UUID ordering.
 
 Actors contain `{id, name, ready, priority, tasks, rules, schedule, arrival}`. Each source task contains `{id, actorId, type, duration}`. Zero-duration source tasks retain IDs but are omitted from scheduling. A scheduled task adds `{start, end, professionalId}`. Names are rendered through `textContent`; they are never parsed for identity.
 

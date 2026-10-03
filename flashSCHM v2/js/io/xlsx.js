@@ -1,5 +1,6 @@
 import { createState, createActor, DEPARTMENTS, DEFAULT_READY, newId } from "../state.js";
 import { parseTime, formatTime } from "../utils/time.js";
+import { validateCatalog } from "../catalog.js";
 
 const durationColumns = {
   trucco: "DurataTrucco",
@@ -116,12 +117,13 @@ function applyActorRows(state, rows) {
 export function parseRows({ Actors, Depts = [], FlashSCHM = [] }) {
   if (FlashSCHM.length) {
     const version = Number(FlashSCHM[0].Version);
-    if (![2, 3, 4].includes(version))
+    if (![2, 3, 4, 5].includes(version))
       throw new Error("unsupported-file-version");
     const state = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
     validateProject(state);
     state.settings.defaultReady ??= DEFAULT_READY;
     state.savedSchedules ??= [];
+    state.actorCatalog ??= [];
     if (version >= 3 || (version === 2 && Actors)) {
       let editableRows = Actors;
       if (version === 2) {
@@ -257,7 +259,7 @@ export function serializeRows(state) {
         (order ? 3 - order.order.indexOf(type) : DEPARTMENTS.indexOf(type) + 1),
     })),
     FlashSCHM: (JSON.stringify(state).match(/[\s\S]{1,30000}/g) || []).map(
-      (Data) => ({ Version: 4, Data }),
+      (Data) => ({ Version: 5, Data }),
     ),
   };
 }
@@ -274,6 +276,7 @@ export function validateProject(state) {
         state.settings.defaultReady >= 1440))
   )
     throw new Error("invalid-project");
+  if (state.actorCatalog !== undefined) validateCatalog(state.actorCatalog);
   const ids = new Set();
   const identify = (id) => {
     if (typeof id !== "string" || !id || ids.has(id))
@@ -338,7 +341,9 @@ export function validateProject(state) {
       !Array.isArray(a.tasks) ||
       !Array.isArray(a.schedule) ||
       !a.rules ||
-      !Array.isArray(a.rules.disabled)
+      !Array.isArray(a.rules.disabled) ||
+      (a.catalogId !== undefined &&
+        (typeof a.catalogId !== "string" || !a.catalogId))
     )
       throw new Error("invalid-actor");
     checkRules(a.rules.add);
