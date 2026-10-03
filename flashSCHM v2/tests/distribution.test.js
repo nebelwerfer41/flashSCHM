@@ -19,7 +19,7 @@ class Element {
 }
 const descendants=node=>[node,...node.children.filter(n=>n instanceof Element).flatMap(descendants)];
 function boot(vis) {
-  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','generate','export','xlsImportInput','ioStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics'];
+  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','defaultReady','applyDefaultReady','readyStatus','generate','export','xlsImportInput','ioStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics'];
   const nodes=Object.fromEntries(ids.map(id=>[id,new Element('div')]));
   const document={
     createElement:tag=>new Element(tag), getElementById:id=>nodes[id],
@@ -59,4 +59,21 @@ test('timeline constructor failure cannot prevent professional and actor control
   nodes.addActor.events.click();
   assert.equal(nodes.actorRows.children.length,1);
   assert.match(nodes.visualization.textContent,/Timeline non disponibile/);
+});
+test('global READY applies to new actors and only overwrites existing actors on command',()=>{
+  const nodes=boot();
+  assert.equal(nodes.defaultReady.value,'10:00');
+  nodes.addActor.events.click();
+  const firstReady=()=>descendants(nodes.actorRows).find(n=>n.attributes['aria-label']==='READY · pronti');
+  assert.equal(firstReady().value,'10:00');
+  nodes.defaultReady.value='09:30';nodes.defaultReady.events.change();
+  assert.equal(firstReady().value,'10:00');
+  nodes.addActor.events.click();
+  const readyFields=()=>descendants(nodes.actorRows).filter(n=>n.attributes['aria-label']==='READY · pronti');
+  assert.deepEqual(readyFields().map(n=>n.value),['10:00','09:30']);
+  readyFields()[0].value='08:45';readyFields()[0].events.input();
+  assert.deepEqual(readyFields().map(n=>n.value),['08:45','09:30']);
+  nodes.applyDefaultReady.events.click();
+  assert.deepEqual(readyFields().map(n=>n.value),['09:30','09:30']);
+  assert.match(nodes.readyStatus.textContent,/2 attori/);
 });

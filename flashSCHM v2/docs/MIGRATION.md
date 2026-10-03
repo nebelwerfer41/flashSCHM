@@ -18,6 +18,8 @@ The generated `.xlsx` has a visible `Actors` sheet. Its `ID` column is hidden an
 
 The hidden `FlashSCHM` sheet contains `Version: 3` and JSON `Data` chunks of at most 30,000 characters. Concatenate Data rows in order to recover the project. Splitting avoids Excel's single-cell text limit. The JSON preserves stable IDs, global and actor rules, professional settings and manual schedules. `Depts` is hidden compatibility data, not an editing surface. Change professionals and advanced rules in the app. Keep both hidden sheets when editing `Actors`.
 
+The project settings also retain `defaultReady`, the READY used for new actors. New rows added in `Actors` with a blank `OrarioPronti` receive this value. Older versioned projects without it import with a 10:00 default; existing actors keep their own READY values.
+
 Version 2 files can also apply changes to the existing actor rows in `Actors`, matched by row position because those exports have no ID column. Re-export with this app before adding, deleting or reordering rows; it adds stable IDs. The older `ProfessionistaTrucco` and `ProfessionistaCapelli` columns are compatibility fields and do not edit advanced rules. `Depts` remains a compatibility snapshot. Legacy files without metadata still use the `Actors` and `Depts` columns described above. Earlier app builds reject version 3 exports. Unknown versions and malformed or duplicate IDs fail validation.
 
 Older application versions cannot represent partial hard constraints, soft professional fallback or override inheritance. The compatibility sheets cannot preserve these in an older application. New-format export is XLSX; legacy XLS/BIFF8 input remains supported. Do not convert versioned metadata to BIFF8 with a writer that truncates long string cells.

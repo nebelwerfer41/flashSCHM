@@ -22,12 +22,13 @@
     capelli: "Capelli",
     costumi: "Costumi"
   };
+  var DEFAULT_READY = 600;
   function createActor(data = {}) {
     const id = data.id || newId();
     return {
       id,
       name: "",
-      ready: 600,
+      ready: DEFAULT_READY,
       priority: 1,
       rules: { add: [], disabled: [] },
       schedule: [],
@@ -48,7 +49,7 @@
         capelli: ["Ciro", "Lori"].map((name) => ({ id: newId(), name })),
         costumi: []
       },
-      settings: { maxAttempts: 48 },
+      settings: { maxAttempts: 48, defaultReady: DEFAULT_READY },
       rules: [
         {
           id: "default-order",
@@ -622,7 +623,7 @@
       if (id && (!byId.has(id) || seen.has(id)))
         throw new Error(`Actors, riga ${rowNumber}: ID attore sconosciuto o duplicato.`);
       if (id) seen.add(id);
-      const actor = id ? byId.get(id) : createActor();
+      const actor = id ? byId.get(id) : createActor({ ready: state.settings.defaultReady });
       let ready;
       try {
         ready = !id && (row.OrarioPronti === "" || row.OrarioPronti == null) ? actor.ready : importedTime(row.OrarioPronti);
@@ -669,12 +670,14 @@
     return state;
   }
   function parseRows({ Actors, Depts = [], FlashSCHM = [] }) {
+    var _a;
     if (FlashSCHM.length) {
       const version = Number(FlashSCHM[0].Version);
       if (![2, 3].includes(version))
         throw new Error("unsupported-file-version");
       const state2 = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
       validateProject(state2);
+      (_a = state2.settings).defaultReady ?? (_a.defaultReady = DEFAULT_READY);
       if (version === 3 || version === 2 && Actors) {
         let editableRows = Actors;
         if (version === 2) {
@@ -779,7 +782,7 @@
     };
   }
   function validateProject(state) {
-    if (!state || !Array.isArray(state.actors) || !Array.isArray(state.rules) || !state.professionals || !state.settings)
+    if (!state || !Array.isArray(state.actors) || !Array.isArray(state.rules) || !state.professionals || !state.settings || state.settings.defaultReady !== void 0 && (!Number.isInteger(state.settings.defaultReady) || state.settings.defaultReady < 0 || state.settings.defaultReady >= 1440))
       throw new Error("invalid-project");
     const ids = /* @__PURE__ */ new Set();
     const identify = (id) => {
@@ -1303,7 +1306,30 @@
       state.diagnostics = [];
       renderSchedule();
     }
+    function renderDefaultReady() {
+      $("defaultReady").value = formatTime(
+        state.settings.defaultReady ?? DEFAULT_READY
+      );
+      $("defaultReady").setCustomValidity("");
+      $("defaultReady").setAttribute("aria-invalid", "false");
+      $("readyStatus").textContent = "";
+    }
+    function readDefaultReady() {
+      try {
+        const ready = parseTime($("defaultReady").value);
+        state.settings.defaultReady = ready;
+        $("defaultReady").setCustomValidity("");
+        $("defaultReady").setAttribute("aria-invalid", "false");
+        return ready;
+      } catch {
+        $("defaultReady").setCustomValidity("Inserisci un orario READY valido.");
+        $("defaultReady").setAttribute("aria-invalid", "true");
+        $("defaultReady").reportValidity();
+        return null;
+      }
+    }
     function renderConfiguration() {
+      renderDefaultReady();
       renderProfessionals(
         $("professionalSettings"),
         state,
@@ -1335,8 +1361,25 @@
         renderActorRows();
       });
     }
+    $("defaultReady").addEventListener("change", () => {
+      if (readDefaultReady() !== null)
+        $("readyStatus").textContent = "Predefinito aggiornato. Gli attori esistenti mantengono il loro READY.";
+    });
+    $("applyDefaultReady").addEventListener("click", () => {
+      const ready = readDefaultReady();
+      if (ready === null) return;
+      const updated = state.actors.filter((actor) => actor.ready !== ready).length;
+      for (const actor of state.actors) actor.ready = ready;
+      if (updated) {
+        changed();
+        renderActorRows();
+      }
+      $("readyStatus").textContent = `READY ${formatTime(ready)} applicato a ${state.actors.length} attori.`;
+    });
     $("addActor").addEventListener("click", () => {
-      state.actors.push(createActor());
+      const ready = readDefaultReady();
+      if (ready === null) return;
+      state.actors.push(createActor({ ready }));
       changed();
       renderActorRows();
       $("actorRows").lastElementChild?.querySelector("input")?.focus();

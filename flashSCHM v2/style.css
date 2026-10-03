@@ -69,6 +69,11 @@ details[open] > summary { margin-bottom: var(--space-4); }
 .primary span { margin-left: 20px; }
 footer { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: var(--text-xs); padding: 20px 0 4px; }
 /* 3. Actor entry */
+.ready-default { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-3); padding: 12px 14px; margin-bottom: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.ready-default label { min-width: 160px; }
+.ready-default input { width: 100%; }
+.ready-default p { flex: 1 1 240px; font-size: var(--text-xs); padding-bottom: 9px; }
+.ready-status:not(:empty) { font-size: var(--text-xs); margin: -4px 0 var(--space-3); }
 #actorRows { display: grid; gap: var(--space-2); }
 .actor-row { padding: 14px 16px 0; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-muted); min-width: 0; }
 .actor-main { display: grid; grid-template-columns: minmax(150px, 2fr) minmax(112px, 1fr) repeat(3, minmax(90px, 1fr)); gap: var(--space-3); }

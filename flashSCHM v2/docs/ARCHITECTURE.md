@@ -17,7 +17,7 @@
 
 ## State boundaries
 
-State is `{actors, professionals, settings, rules, diagnostics}`. Professionals are arrays per department of `{id, name}`. Their order is the explicit fallback selection order. Actor priority and READY determine actor scheduling order, not row position or UUID ordering.
+State is `{actors, professionals, settings, rules, diagnostics}`. `settings.defaultReady` is the READY assigned to new actors; the explicit **Applica a tutti** action copies it into existing actors. Each actor keeps an independent `ready` value, so changing the default alone does not alter a generated schedule. Professionals are arrays per department of `{id, name}`. Their order is the explicit fallback selection order. Actor priority and READY determine actor scheduling order, not row position or UUID ordering.
 
 Actors contain `{id, name, ready, priority, tasks, rules, schedule, arrival}`. Each source task contains `{id, actorId, type, duration}`. Zero-duration source tasks retain IDs but are omitted from scheduling. A scheduled task adds `{start, end, professionalId}`. Names are rendered through `textContent`; they are never parsed for identity.
 

@@ -4,11 +4,13 @@ import {
   newId,
   DEPARTMENTS,
   LABELS,
+  DEFAULT_READY,
 } from "./state.js";
 import { generateSchedule } from "./scheduling/scheduler.js";
 import { detectConflicts } from "./scheduling/conflicts.js";
 import { createTimeline } from "./timeline/timeline.js";
 import { readWorkbook, writeWorkbook } from "./io/xlsx.js";
+import { parseTime, formatTime } from "./utils/time.js";
 import {
   renderActors,
   renderProfessionals,
@@ -41,7 +43,30 @@ export function initApp() {
     state.diagnostics = [];
     renderSchedule();
   }
+  function renderDefaultReady() {
+    $("defaultReady").value = formatTime(
+      state.settings.defaultReady ?? DEFAULT_READY,
+    );
+    $("defaultReady").setCustomValidity("");
+    $("defaultReady").setAttribute("aria-invalid", "false");
+    $("readyStatus").textContent = "";
+  }
+  function readDefaultReady() {
+    try {
+      const ready = parseTime($("defaultReady").value);
+      state.settings.defaultReady = ready;
+      $("defaultReady").setCustomValidity("");
+      $("defaultReady").setAttribute("aria-invalid", "false");
+      return ready;
+    } catch {
+      $("defaultReady").setCustomValidity("Inserisci un orario READY valido.");
+      $("defaultReady").setAttribute("aria-invalid", "true");
+      $("defaultReady").reportValidity();
+      return null;
+    }
+  }
   function renderConfiguration() {
+    renderDefaultReady();
     renderProfessionals(
       $("professionalSettings"),
       state,
@@ -73,8 +98,25 @@ export function initApp() {
       renderActorRows();
     });
   }
+  $("defaultReady").addEventListener("change", () => {
+    if (readDefaultReady() !== null)
+      $("readyStatus").textContent = "Predefinito aggiornato. Gli attori esistenti mantengono il loro READY.";
+  });
+  $("applyDefaultReady").addEventListener("click", () => {
+    const ready = readDefaultReady();
+    if (ready === null) return;
+    const updated = state.actors.filter((actor) => actor.ready !== ready).length;
+    for (const actor of state.actors) actor.ready = ready;
+    if (updated) {
+      changed();
+      renderActorRows();
+    }
+    $("readyStatus").textContent = `READY ${formatTime(ready)} applicato a ${state.actors.length} attori.`;
+  });
   $("addActor").addEventListener("click", () => {
-    state.actors.push(createActor());
+    const ready = readDefaultReady();
+    if (ready === null) return;
+    state.actors.push(createActor({ ready }));
     changed();
     renderActorRows();
     $("actorRows").lastElementChild?.querySelector("input")?.focus();

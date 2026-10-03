@@ -1,4 +1,4 @@
-import { createState, createActor, DEPARTMENTS, newId } from "../state.js";
+import { createState, createActor, DEPARTMENTS, DEFAULT_READY, newId } from "../state.js";
 import { parseTime, formatTime } from "../utils/time.js";
 
 const durationColumns = {
@@ -48,7 +48,9 @@ function applyActorRows(state, rows) {
       if (id && (!byId.has(id) || seen.has(id)))
         throw new Error(`Actors, riga ${rowNumber}: ID attore sconosciuto o duplicato.`);
       if (id) seen.add(id);
-      const actor = id ? byId.get(id) : createActor();
+      const actor = id
+        ? byId.get(id)
+        : createActor({ ready: state.settings.defaultReady });
       let ready;
       try {
         ready =
@@ -114,6 +116,7 @@ export function parseRows({ Actors, Depts = [], FlashSCHM = [] }) {
       throw new Error("unsupported-file-version");
     const state = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
     validateProject(state);
+    state.settings.defaultReady ??= DEFAULT_READY;
     if (version === 3 || (version === 2 && Actors)) {
       let editableRows = Actors;
       if (version === 2) {
@@ -240,7 +243,11 @@ export function validateProject(state) {
     !Array.isArray(state.actors) ||
     !Array.isArray(state.rules) ||
     !state.professionals ||
-    !state.settings
+    !state.settings ||
+    (state.settings.defaultReady !== undefined &&
+      (!Number.isInteger(state.settings.defaultReady) ||
+        state.settings.defaultReady < 0 ||
+        state.settings.defaultReady >= 1440))
   )
     throw new Error("invalid-project");
   const ids = new Set();

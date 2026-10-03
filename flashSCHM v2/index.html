@@ -20,6 +20,12 @@
   <main id="main">
     <section class="panel actors-panel" aria-labelledby="actorsTitle">
       <div class="section-header"><div><span class="eyebrow">01 / CONFIGURAZIONE</span><h2 id="actorsTitle">Attori <span id="actorCount" class="count">0</span></h2><p>Imposta l’orario READY e le durate. Con 0 minuti il reparto viene saltato.</p></div><button id="addActor" type="button">+ Aggiungi attore</button></div>
+      <div class="ready-default">
+        <label for="defaultReady">READY predefinito<input id="defaultReady" type="time" required aria-describedby="defaultReadyHelp" /></label>
+        <button id="applyDefaultReady" type="button">Applica a tutti</button>
+        <p id="defaultReadyHelp">Usato per i nuovi attori. “Applica a tutti” sostituisce i READY individuali.</p>
+      </div>
+      <p id="readyStatus" class="ready-status" role="status" aria-live="polite"></p>
       <div id="actorRows"></div>
     </section>
     <div class="configuration-grid">

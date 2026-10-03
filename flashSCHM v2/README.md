@@ -38,7 +38,7 @@ The page loads the existing SheetJS 0.18.5 dependency and vis-timeline 7.7.3 fro
 
 ## Use
 
-1. Add actors; enter names, READY times and task durations in minutes. A zero duration skips a department.
+1. Set **READY predefinito** for new actors. **Applica a tutti** updates existing actors too and replaces their individual READY values; you can then change any actor's READY separately. Add actors and enter names and task durations in minutes. A zero duration skips a department.
 2. Open **Professionisti** when crew configuration needs changing. With no professionals in a department, its capacity is free: different actors may work in it simultaneously. Add professionals to impose individual capacity limits. The same actor can never do two tasks at once.
 3. Generate the schedule. Each actor must finish before READY, on the same day.
 4. Use **Regole avanzate globali** for common rules; actor **Avanzate** controls priority and exceptions. **Preferisci** allows alternatives; **Richiedi** is mandatory. With no professional rule, any available professional can be selected.
@@ -77,6 +77,7 @@ It checks versioned XLSX round trips, hidden metadata, actor edits, metadata exc
 
 ## Documentation
 
+- [Roadmap](docs/ROADMAP.md)
 - [Architecture and extension points](docs/ARCHITECTURE.md)
 - [Rules and inheritance](docs/RULES.md)
 - [Legacy migration and format details](docs/MIGRATION.md)

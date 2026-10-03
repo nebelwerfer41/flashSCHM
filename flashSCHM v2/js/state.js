@@ -4,6 +4,7 @@ export const LABELS = {
   capelli: "Capelli",
   costumi: "Costumi",
 };
+export const DEFAULT_READY = 600;
 export { newId } from "./utils/ids.js";
 import { newId } from "./utils/ids.js";
 export function createActor(data = {}) {
@@ -11,7 +12,7 @@ export function createActor(data = {}) {
   return {
     id,
     name: "",
-    ready: 600,
+    ready: DEFAULT_READY,
     priority: 1,
     rules: { add: [], disabled: [] },
     schedule: [],
@@ -34,7 +35,7 @@ export function createState() {
       capelli: ["Ciro", "Lori"].map((name) => ({ id: newId(), name })),
       costumi: [],
     },
-    settings: { maxAttempts: 48 },
+    settings: { maxAttempts: 48, defaultReady: DEFAULT_READY },
     rules: [
       {
         id: "default-order",

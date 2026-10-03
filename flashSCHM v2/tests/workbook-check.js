@@ -7,6 +7,7 @@ import { createState, createActor } from "../js/state.js";
 import { readWorkbook, writeWorkbook } from "../js/io/xlsx.js";
 const XLSX = createRequire(import.meta.url)(resolve(process.argv[2]));
 const state = createState();
+state.settings.defaultReady = 555;
 state.actors = Array.from({ length: 80 }, (_, i) =>
   createActor({ name: `Synthetic ${i}` }),
 );
@@ -21,8 +22,27 @@ for (const bookType of ["xlsx"]) {
   assert.equal(workbook.Sheets.Actors["!cols"][0].hidden, true);
   assert.equal(workbook.Workbook.Sheets[1].Hidden, 1);
   workbook.Sheets.Actors.B2.v = "Edited in Excel";
+  XLSX.utils.sheet_add_json(
+    workbook.Sheets.Actors,
+    [{ ID: "", Nome: "Added in Excel", OrarioPronti: "", DurataTrucco: 15 }],
+    {
+      header: [
+        "ID",
+        "Nome",
+        "OrarioPronti",
+        "PrioritaAttore",
+        "DurataTrucco",
+        "DurataCapelli",
+        "DurataCostumi",
+      ],
+      skipHeader: true,
+      origin: -1,
+    },
+  );
   const editedBytes = XLSX.write(workbook, { type: "buffer", bookType, cellStyles: true });
-  assert.equal(readWorkbook(XLSX, editedBytes).actors[0].name, "Edited in Excel");
+  const edited = readWorkbook(XLSX, editedBytes);
+  assert.equal(edited.actors[0].name, "Edited in Excel");
+  assert.equal(edited.actors.at(-1).ready, 555);
 }
 const legacy = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(

@@ -312,6 +312,27 @@ test("versioned XLS rows retain schedules, IDs, overrides and partial rules", ()
   assert.deepEqual(parseRows(serializeRows(s)), s);
   assert.throws(() => parseRows({ FlashSCHM: [{ Version: 9, Data: "{}" }] }));
 });
+test("global READY persists in projects and supplies blank new XLSX actor rows", () => {
+  const state = input([actor([15, 0, 0], { name: "Existing", ready: 610 })]);
+  state.settings.defaultReady = 555;
+  const rows = serializeRows(state);
+  rows.Actors.push({ Nome: "New", OrarioPronti: "", DurataTrucco: 20 });
+  const imported = parseRows(rows);
+  assert.equal(imported.settings.defaultReady, 555);
+  assert.deepEqual(imported.actors.map((a) => a.ready), [610, 555]);
+  assert.equal(imported.actors[1].tasks[0].duration, 20);
+  assert.deepEqual(parseRows(serializeRows(imported)), imported);
+});
+test("older project metadata receives a valid global READY default", () => {
+  const state = input([actor([15, 0, 0], { name: "Existing" })]);
+  const rows = serializeRows(state);
+  const old = JSON.parse(rows.FlashSCHM[0].Data);
+  delete old.settings.defaultReady;
+  rows.FlashSCHM[0].Data = JSON.stringify(old);
+  assert.equal(parseRows(rows).settings.defaultReady, 600);
+  state.settings.defaultReady = 1440;
+  assert.throws(() => serializeRows(state), /invalid-project/);
+});
 test("editable actor rows update versioned projects while preserving advanced rules", () => {
   const s = input([
     actor([20, 15, 0], { name: "Mario" }),
