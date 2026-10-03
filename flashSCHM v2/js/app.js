@@ -108,6 +108,7 @@ export function initApp() {
       globalThis.XLSX.writeFile(
         writeWorkbook(globalThis.XLSX, state),
         "flash_scheduler_export.xlsx",
+        { cellStyles: true },
       );
       $("ioStatus").setAttribute("data-status", "success");
       $("ioStatus").textContent = "Esportazione completata.";
@@ -131,7 +132,7 @@ export function initApp() {
       renderConfiguration();
       renderSchedule(true);
       $("ioStatus").setAttribute("data-status", "success");
-      $("ioStatus").textContent = "Importazione completata.";
+      $("ioStatus").textContent = "Importazione completata. Se hai modificato gli orari, genera di nuovo la programmazione.";
     } catch (error) {
       $("ioStatus").setAttribute("data-status", "error");
       $("ioStatus").textContent = `Importazione non riuscita: ${error.message}`;

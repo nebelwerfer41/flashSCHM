@@ -12,11 +12,13 @@ Professional count zero retains free capacity for that department. Comma-separat
 
 Legacy READY accepts HH:MM and numeric Excel day fractions. Negative durations, malformed times and structurally invalid projects are rejected before replacing current state.
 
-## Version 2 export
+## Version 3 export
 
-The generated `.xlsx` retains Actors and Depts for reference/compatibility and adds **FlashSCHM**, with `Version: 2` and JSON `Data` chunks of at most 30,000 characters. Concatenate Data rows in order to recover the project. Splitting avoids Excel's single-cell text limit. This includes stable IDs, global/actor rules, professional settings and manual schedules. Unknown versions and malformed/duplicate IDs fail validation.
+The generated `.xlsx` has a visible `Actors` sheet. Its `ID` column is hidden and ties each row to the actor's rules and tasks. Names, READY, priorities and department durations in this sheet are authoritative on import. Add a row with a blank ID to add an actor, remove a row to delete one, or reorder rows to change input order. Duplicate and unknown IDs are rejected. Changes to scheduling inputs or row order clear all saved schedules and diagnostics; generate a new schedule after importing. Name-only changes preserve the saved schedule.
 
-**The FlashSCHM sheet is authoritative when present.** Editing only Actors or Depts in a new export will not update the embedded project. To use those sheets as a legacy input, remove FlashSCHM before importing; this intentionally loses IDs, advanced rules and the saved schedule. Keep the original export as a backup.
+The hidden `FlashSCHM` sheet contains `Version: 3` and JSON `Data` chunks of at most 30,000 characters. Concatenate Data rows in order to recover the project. Splitting avoids Excel's single-cell text limit. The JSON preserves stable IDs, global and actor rules, professional settings and manual schedules. `Depts` is hidden compatibility data, not an editing surface. Change professionals and advanced rules in the app. Keep both hidden sheets when editing `Actors`.
+
+Version 2 files can also apply changes to the existing actor rows in `Actors`, matched by row position because those exports have no ID column. Re-export with this app before adding, deleting or reordering rows; it adds stable IDs. The older `ProfessionistaTrucco` and `ProfessionistaCapelli` columns are compatibility fields and do not edit advanced rules. `Depts` remains a compatibility snapshot. Legacy files without metadata still use the `Actors` and `Depts` columns described above. Earlier app builds reject version 3 exports. Unknown versions and malformed or duplicate IDs fail validation.
 
 Older application versions cannot represent partial hard constraints, soft professional fallback or override inheritance. The compatibility sheets cannot preserve these in an older application. New-format export is XLSX; legacy XLS/BIFF8 input remains supported. Do not convert versioned metadata to BIFF8 with a writer that truncates long string cells.
 

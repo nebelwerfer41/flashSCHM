@@ -595,12 +595,108 @@
       return Math.round(value * 1440) % 1440;
     return parseTime(String(value));
   }
-  function parseRows({ Actors = [], Depts = [], FlashSCHM = [] }) {
+  var actorColumns = [
+    "ID",
+    "Nome",
+    "OrarioPronti",
+    "PrioritaAttore",
+    "DurataTrucco",
+    "DurataCapelli",
+    "DurataCostumi"
+  ];
+  function editableInteger(value, fallback, minimum, label, rowNumber) {
+    if (value === "" || value === void 0 || value === null) return fallback;
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < minimum)
+      throw new Error(`Actors, riga ${rowNumber}: ${label} non valido.`);
+    return number;
+  }
+  function applyActorRows(state, rows) {
+    if (!Array.isArray(rows)) throw new Error("missing-actors-sheet");
+    const byId = new Map(state.actors.map((actor) => [actor.id, actor]));
+    const seen = /* @__PURE__ */ new Set();
+    let scheduleChanged = false;
+    const actors = rows.filter((row) => actorColumns.some((column) => String(row[column] ?? "").trim())).map((row, index) => {
+      const rowNumber = Number.isInteger(row.__rowNum__) ? row.__rowNum__ + 1 : index + 2;
+      const id = String(row.ID ?? "").trim();
+      if (id && (!byId.has(id) || seen.has(id)))
+        throw new Error(`Actors, riga ${rowNumber}: ID attore sconosciuto o duplicato.`);
+      if (id) seen.add(id);
+      const actor = id ? byId.get(id) : createActor();
+      let ready;
+      try {
+        ready = !id && (row.OrarioPronti === "" || row.OrarioPronti == null) ? actor.ready : importedTime(row.OrarioPronti);
+      } catch {
+        throw new Error(`Actors, riga ${rowNumber}: OrarioPronti non valido.`);
+      }
+      const priority = editableInteger(
+        row.PrioritaAttore,
+        1,
+        1,
+        "PrioritaAttore",
+        rowNumber
+      );
+      const durations = Object.fromEntries(
+        DEPARTMENTS.map((type) => [
+          type,
+          editableInteger(
+            row[durationColumns[type]],
+            0,
+            0,
+            durationColumns[type],
+            rowNumber
+          )
+        ])
+      );
+      if (!id || actor.ready !== ready || actor.priority !== priority || actor.tasks.some((task) => task.duration !== durations[task.type]))
+        scheduleChanged = true;
+      actor.name = String(row.Nome ?? "");
+      actor.ready = ready;
+      actor.priority = priority;
+      for (const task of actor.tasks) task.duration = durations[task.type];
+      return actor;
+    });
+    if (actors.length !== state.actors.length || actors.some((actor, index) => actor.id !== state.actors[index].id))
+      scheduleChanged = true;
+    state.actors = actors;
+    if (scheduleChanged) {
+      for (const actor of actors) {
+        actor.schedule = [];
+        actor.arrival = null;
+      }
+      state.diagnostics = [];
+    }
+    return state;
+  }
+  function parseRows({ Actors, Depts = [], FlashSCHM = [] }) {
     if (FlashSCHM.length) {
-      if (Number(FlashSCHM[0].Version) !== 2)
+      const version = Number(FlashSCHM[0].Version);
+      if (![2, 3].includes(version))
         throw new Error("unsupported-file-version");
       const state2 = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
       validateProject(state2);
+      if (version === 3 || version === 2 && Actors) {
+        let editableRows = Actors;
+        if (version === 2) {
+          if (Actors.length !== state2.actors.length)
+            throw new Error("Per aggiungere o eliminare attori, riesporta il progetto con questa versione dell\u2019app.");
+          const namePositions = /* @__PURE__ */ new Map();
+          for (const [index, actor] of state2.actors.entries()) {
+            if (namePositions.has(actor.name)) namePositions.set(actor.name, null);
+            else namePositions.set(actor.name, index);
+          }
+          if (Actors.some(
+            (row, index) => namePositions.has(String(row.Nome ?? "")) && namePositions.get(String(row.Nome ?? "")) !== null && namePositions.get(String(row.Nome ?? "")) !== index
+          ))
+            throw new Error("Per riordinare gli attori, riesporta il progetto con questa versione dell\u2019app.");
+          editableRows = Actors.map((row, index) => ({
+            ...row,
+            ID: state2.actors[index].id
+          }));
+        }
+        applyActorRows(state2, editableRows);
+        validateProject(state2);
+      }
       return state2;
     }
     const state = createState(), priorities = { trucco: 1, capelli: 2, costumi: 3 };
@@ -628,7 +724,7 @@
         legacyWeights: priorities
       }
     ];
-    for (const row of Actors) {
+    for (const row of Actors || []) {
       const actor = createActor({
         name: String(row.Nome || ""),
         ready: importedTime(row.OrarioPronti),
@@ -662,21 +758,13 @@
     return {
       Actors: state.actors.map((a) => {
         const row = {
+          ID: a.id,
           Nome: a.name,
           OrarioPronti: formatTime(a.ready),
           PrioritaAttore: a.priority
         };
         for (const type of DEPARTMENTS)
           row[durationColumns[type]] = a.tasks.find((t) => t.type === type)?.duration || 0;
-        for (const [department, column] of Object.entries(professionalColumns)) {
-          const rule = a.rules.add.find(
-            (r) => r.type === "professional" && r.department === department && r.strength === "required"
-          );
-          const index = state.professionals[department].findIndex(
-            (p) => p.id === rule?.professionalId
-          );
-          row[column] = index >= 0 ? index : "";
-        }
         return row;
       }),
       Depts: DEPARTMENTS.map((type) => ({
@@ -686,7 +774,7 @@
         Priorita: order?.legacyWeights?.[type] || (order ? 3 - order.order.indexOf(type) : DEPARTMENTS.indexOf(type) + 1)
       })),
       FlashSCHM: (JSON.stringify(state).match(/[\s\S]{1,30000}/g) || []).map(
-        (Data) => ({ Version: 2, Data })
+        (Data) => ({ Version: 3, Data })
       )
     };
   }
@@ -752,13 +840,32 @@
     if (!workbook.Sheets.Actors && !workbook.Sheets.FlashSCHM)
       throw new Error("missing-actors-sheet");
     for (const name of ["Actors", "Depts", "FlashSCHM"])
-      rows[name] = workbook.Sheets[name] ? XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: "" }) : [];
+      if (workbook.Sheets[name])
+        rows[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: "" });
     return parseRows(rows);
   }
   function writeWorkbook(XLSX, state) {
     const book = XLSX.utils.book_new();
-    for (const [name, rows] of Object.entries(serializeRows(state)))
-      XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows), name);
+    for (const [name, rows] of Object.entries(serializeRows(state))) {
+      const sheet = name === "Actors" && rows.length === 0 ? XLSX.utils.aoa_to_sheet([actorColumns]) : XLSX.utils.json_to_sheet(
+        rows,
+        name === "Actors" ? { header: actorColumns } : void 0
+      );
+      if (name === "Actors") {
+        sheet["!cols"] = [
+          { hidden: true },
+          { wch: 26 },
+          { wch: 17 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 }
+        ];
+        if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
+      }
+      XLSX.utils.book_append_sheet(book, sheet, name);
+    }
+    book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 1 }, { Hidden: 1 }] };
     return book;
   }
 
@@ -1259,7 +1366,8 @@
           );
         globalThis.XLSX.writeFile(
           writeWorkbook(globalThis.XLSX, state),
-          "flash_scheduler_export.xlsx"
+          "flash_scheduler_export.xlsx",
+          { cellStyles: true }
         );
         $("ioStatus").setAttribute("data-status", "success");
         $("ioStatus").textContent = "Esportazione completata.";
@@ -1283,7 +1391,7 @@
         renderConfiguration();
         renderSchedule(true);
         $("ioStatus").setAttribute("data-status", "success");
-        $("ioStatus").textContent = "Importazione completata.";
+        $("ioStatus").textContent = "Importazione completata. Se hai modificato gli orari, genera di nuovo la programmazione.";
       } catch (error) {
         $("ioStatus").setAttribute("data-status", "error");
         $("ioStatus").textContent = `Importazione non riuscita: ${error.message}`;

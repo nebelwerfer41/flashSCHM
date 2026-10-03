@@ -312,6 +312,78 @@ test("versioned XLS rows retain schedules, IDs, overrides and partial rules", ()
   assert.deepEqual(parseRows(serializeRows(s)), s);
   assert.throws(() => parseRows({ FlashSCHM: [{ Version: 9, Data: "{}" }] }));
 });
+test("editable actor rows update versioned projects while preserving advanced rules", () => {
+  const s = input([
+    actor([20, 15, 0], { name: "Mario" }),
+    actor([10, 0, 0], { name: "Luigi" }),
+  ]);
+  s.actors[0].rules.add = [rule("last", { department: "costumi" })];
+  s.actors = generateSchedule(s).actors;
+  const originalId = s.actors[0].id;
+  const originalTaskIds = s.actors[0].tasks.map((task) => task.id);
+  const rows = serializeRows(s);
+  rows.Actors[0].Nome = "Mario Rossi";
+  rows.Actors[0].OrarioPronti = "11:30";
+  rows.Actors[0].DurataTrucco = 35;
+  rows.Actors[0].PrioritaAttore = 2;
+  rows.Actors.pop();
+  rows.Actors.push({ Nome: "Peach", OrarioPronti: "12:00", DurataCapelli: 25 });
+  const imported = parseRows(rows);
+  assert.deepEqual(imported.actors.map((a) => a.name), ["Mario Rossi", "Peach"]);
+  assert.equal(imported.actors[0].id, originalId);
+  assert.deepEqual(imported.actors[0].tasks.map((task) => task.id), originalTaskIds);
+  assert.deepEqual(imported.actors[0].rules.add, s.actors[0].rules.add);
+  assert.equal(imported.actors[0].ready, 690);
+  assert.equal(imported.actors[0].tasks[0].duration, 35);
+  assert.equal(imported.actors[1].tasks[1].duration, 25);
+  assert.ok(imported.actors.every((a) => a.schedule.length === 0));
+});
+test("version 2 actor edits use row position; version 3 rejects ambiguous IDs", () => {
+  const s = input([actor([20, 0, 0], { name: "Original" })]);
+  const rows = serializeRows(s);
+  rows.FlashSCHM.forEach((row) => (row.Version = 2));
+  delete rows.Actors[0].ID;
+  rows.Actors[0].Nome = "Edited";
+  rows.Actors[0].OrarioPronti = "11:00";
+  assert.equal(parseRows(rows).actors[0].name, "Edited");
+  assert.equal(parseRows(rows).actors[0].ready, 660);
+  rows.Actors.push({ Nome: "Added", OrarioPronti: "12:00" });
+  assert.throws(() => parseRows(rows), /riesporta il progetto/);
+  rows.Actors.pop();
+  const reordered = serializeRows(input([
+    actor([20, 0, 0], { name: "Mario" }),
+    actor([15, 0, 0], { name: "Luigi" }),
+  ]));
+  reordered.FlashSCHM.forEach((row) => (row.Version = 2));
+  reordered.Actors.reverse();
+  assert.throws(() => parseRows(reordered), /riordinare gli attori/);
+  rows.FlashSCHM.forEach((row) => (row.Version = 3));
+  rows.Actors[0].ID = s.actors[0].id;
+  rows.Actors.push({ ...rows.Actors[0] });
+  assert.throws(() => parseRows(rows), /ID attore sconosciuto o duplicato/);
+  rows.Actors.pop();
+  rows.Actors[0].ID = "unknown";
+  assert.throws(() => parseRows(rows), /ID attore sconosciuto o duplicato/);
+  rows.Actors[0].ID = s.actors[0].id;
+  rows.Actors[0].OrarioPronti = "25:00";
+  assert.throws(() => parseRows(rows), /OrarioPronti non valido/);
+  rows.Actors[0].OrarioPronti = "10:00";
+  rows.Actors[0].DurataTrucco = -1;
+  assert.throws(() => parseRows(rows), /DurataTrucco non valido/);
+  assert.throws(
+    () => parseRows({ FlashSCHM: rows.FlashSCHM }),
+    /missing-actors-sheet/,
+  );
+});
+test("a name-only spreadsheet edit keeps the saved manual schedule", () => {
+  const s = input([actor([20, 0, 0], { name: "Old name" })]);
+  s.actors = generateSchedule(s).actors;
+  const rows = serializeRows(s);
+  rows.Actors[0].Nome = "New name";
+  const imported = parseRows(rows);
+  assert.equal(imported.actors[0].name, "New name");
+  assert.deepEqual(imported.actors[0].schedule, s.actors[0].schedule);
+});
 test("Mario and Luigi share Costume and alternate Makeup/Hair without an earlier arrival", () => {
   const s = input([
     actor([15, 15, 15], { name: "Mario" }),
