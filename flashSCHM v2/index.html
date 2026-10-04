@@ -13,12 +13,19 @@
   <header class="app-header">
     <div class="brand"><span class="eyebrow">PRODUZIONE · PIANIFICAZIONE REPARTI</span><h1>Flash <span>SCHM</span></h1><p>Trucco, Capelli e Costumi. Tutti pronti al momento giusto.</p></div>
     <div class="project-actions">
-      <div class="io-row"><label class="import-button" for="xlsImportInput">Importa XLS<input class="file-input" type="file" id="xlsImportInput" accept=".xls,.xlsx" /></label><button id="export" type="button">Esporta XLS</button></div>
-      <p id="ioStatus" role="status" aria-live="polite" aria-atomic="true">Progetto in memoria · esporta prima di chiudere.</p>
+      <div class="io-row"><label class="import-button" for="xlsImportInput">Importa XLSX<input class="file-input" type="file" id="xlsImportInput" accept=".xls,.xlsx" /></label><button id="export" type="button">Esporta XLSX</button></div>
+      <p id="ioStatus" role="status" aria-live="polite" aria-atomic="true">Un XLSX conserva piano, versioni e catalogo.</p>
       <p id="exportStatus" role="status" aria-live="polite"></p>
     </div>
   </header>
   <main id="main">
+    <section id="importPreview" class="panel import-preview" aria-labelledby="importPreviewTitle" hidden>
+      <h2 id="importPreviewTitle">Anteprima importazione</h2>
+      <p id="importPreviewStatus"></p>
+      <ul id="importPreviewRows" class="catalog-list"></ul>
+      <label id="duplicateActionLabel" for="duplicateAction">ID catalogo già presenti<select id="duplicateAction"><option value="">Scegli come gestirli</option><option value="replace">Aggiorna le schede esistenti</option><option value="keep">Mantieni le schede esistenti</option></select></label>
+      <div class="import-actions"><button id="applyImport" type="button">Applica importazione</button><button id="cancelImport" type="button">Annulla</button></div>
+    </section>
     <section class="panel actors-panel" aria-labelledby="actorsTitle">
       <div class="section-header"><div><span class="eyebrow">01 / CONFIGURAZIONE</span><h2 id="actorsTitle">Attori <span id="actorCount" class="count">0</span></h2><p>Imposta l’orario READY e le durate. Con 0 minuti il reparto viene saltato.</p></div><button id="addActor" type="button">+ Aggiungi attore</button></div>
       <div class="ready-default">
@@ -30,17 +37,10 @@
       <div id="actorRows"></div>
     </section>
     <section class="panel catalog-panel" aria-labelledby="catalogTitle">
-      <div class="section-header"><div><span class="eyebrow">CATALOGO</span><h2 id="catalogTitle">Catalogo attori <span id="catalogCount" class="count">0</span></h2><p>Conserva nomi e durate abituali in un XLSX separato. Gli attori aggiunti al piano restano indipendenti.</p></div></div>
-      <div class="catalog-actions"><label class="import-button" for="catalogImportInput">Importa catalogo XLSX<input class="file-input" type="file" id="catalogImportInput" accept=".xlsx" /></label><button id="catalogExport" type="button">Esporta catalogo XLSX</button></div>
+      <div class="section-header"><div><span class="eyebrow">CATALOGO</span><h2 id="catalogTitle">Catalogo attori <span id="catalogCount" class="count">0</span></h2><p>Nomi e durate abituali sono nella scheda Catalogo del progetto XLSX. Gli attori aggiunti al piano restano indipendenti.</p></div></div>
       <p id="catalogStatus" role="status" aria-live="polite"></p>
-      <div id="catalogPreview" class="catalog-preview" hidden>
-        <h3>Anteprima importazione</h3><p id="catalogPreviewStatus"></p>
-        <ul id="catalogPreviewRows" class="catalog-list"></ul>
-        <label id="duplicateActionLabel" for="duplicateAction">ID già presenti<select id="duplicateAction"><option value="">Scegli come gestirli</option><option value="replace">Aggiorna le schede esistenti</option><option value="keep">Mantieni le schede esistenti</option></select></label>
-        <div class="catalog-actions"><button id="applyCatalogImport" type="button" disabled>Applica importazione</button><button id="cancelCatalogImport" type="button">Annulla</button></div>
-      </div>
       <div class="catalog-picker"><label for="catalogSearch">Cerca nel catalogo<input id="catalogSearch" type="search" placeholder="Nome o ID" /></label><button id="addCatalogActors" type="button" disabled>Aggiungi selezionati al piano</button></div>
-      <p id="catalogEmpty">Il catalogo è vuoto. Esporta un modello XLSX, compilalo e reimportalo.</p>
+      <p id="catalogEmpty">Il catalogo è vuoto. Compila la scheda Catalogo del progetto XLSX e reimportalo.</p>
       <ul id="catalogList" class="catalog-list"></ul>
     </section>
     <div class="configuration-grid">

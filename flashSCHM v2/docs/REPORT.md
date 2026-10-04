@@ -1,8 +1,12 @@
 # Refactoring and verification report
 
+## Roadmap phase 3.1: unified XLSX
+
+The app now exports one project XLSX with visible `Actors`, `Programmazioni` and `Catalogo` sheets. The single import control previews full project replacement and accepts earlier catalog-only files for migration, with the existing explicit ID collision choice. Project format 6 applies visible catalog edits while preserving rules, manual schedules and saved versions in metadata. Tests cover full project round trips, edited catalog cells, old catalog-only imports and the direct-file bundle.
+
 ## Roadmap phase 3: actor catalog
 
-The project now stores a catalog separately from its current plan and saved plan snapshots. Standalone `Catalogo` XLSX files carry stable catalog IDs, names and usual department durations. Import previews every entry; an ID already present requires an explicit keep or replace decision. Multi-select adds independent actor copies with new plan IDs and the current default READY. Project format 5 retains the catalog in metadata; versions 2–4 still import. Automated tests cover duplicate handling, copy independence, backward import and actual SheetJS catalog/project workbook round trips. The shipped classic bundle includes the catalog UI.
+The project stores a catalog separately from its current plan and saved plan snapshots. Phase 3 originally added standalone `Catalogo` XLSX files with stable catalog IDs, names and usual department durations. Import previewed every entry; an ID already present required an explicit keep or replace decision. Multi-select added independent actor copies with new plan IDs and the current default READY. Project format 5 retained the catalog in metadata. Phase 3.1 replaced separate export with the unified workbook above.
 
 ## Architecture and engine
 

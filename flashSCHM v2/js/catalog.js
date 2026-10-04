@@ -116,24 +116,3 @@ export function addCatalogActorsToPlan(state, ids) {
   state.actors.push(...actors);
   return actors;
 }
-
-export function readCatalogWorkbook(XLSX, buffer) {
-  const workbook = XLSX.read(buffer, { type: "array" });
-  if (!workbook.Sheets.Catalogo) throw new Error("Scheda Catalogo mancante.");
-  const header = XLSX.utils.sheet_to_json(workbook.Sheets.Catalogo, { header: 1 })[0] || [];
-  if (!CATALOG_COLUMNS.every((column) => header.includes(column)))
-    throw new Error(`Catalogo: intestazioni richieste ${CATALOG_COLUMNS.join(", ")}.`);
-  return parseCatalogRows(XLSX.utils.sheet_to_json(workbook.Sheets.Catalogo, { defval: "" }));
-}
-
-export function writeCatalogWorkbook(XLSX, catalog) {
-  const rows = serializeCatalogRows(catalog);
-  const workbook = XLSX.utils.book_new();
-  const sheet = rows.length
-    ? XLSX.utils.json_to_sheet(rows, { header: CATALOG_COLUMNS })
-    : XLSX.utils.aoa_to_sheet([CATALOG_COLUMNS]);
-  sheet["!cols"] = [{ wch: 38 }, { wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
-  if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
-  XLSX.utils.book_append_sheet(workbook, sheet, "Catalogo");
-  return workbook;
-}

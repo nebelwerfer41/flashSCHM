@@ -13,8 +13,8 @@
 | `scheduling/conflicts.js` | Domain conflicts and manual schedule edits |
 | `ui/` | DOM rendering and rule controls; human-readable Italian diagnostics |
 | `timeline/timeline.js` | vis datasets, metadata, selection and edit callbacks |
-| `io/xlsx.js` | Pure project/row conversion plus injected SheetJS workbook adapter |
-| `catalog.js` | Catalog row validation, import decisions, plan copies and standalone XLSX adapter |
+| `catalog.js` | Catalog row validation, import decisions and independent plan copies |
+| `io/xlsx.js` | Single project XLSX adapter, editable visible sheets and older import routing |
 
 ## State boundaries
 

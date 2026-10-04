@@ -1,6 +1,8 @@
 import { createState, createActor, DEPARTMENTS, DEFAULT_READY, newId } from "../state.js";
 import { parseTime, formatTime } from "../utils/time.js";
-import { validateCatalog } from "../catalog.js";
+import {
+  CATALOG_COLUMNS, validateCatalog, parseCatalogRows, serializeCatalogRows,
+} from "../catalog.js";
 
 const durationColumns = {
   trucco: "DurataTrucco",
@@ -114,16 +116,20 @@ function applyActorRows(state, rows) {
 }
 
 /** Pure row conversion; spreadsheet library belongs only to the thin workbook adapter below. */
-export function parseRows({ Actors, Depts = [], FlashSCHM = [] }) {
+export function parseRows({ Actors, Catalogo, Depts = [], FlashSCHM = [] }) {
   if (FlashSCHM.length) {
     const version = Number(FlashSCHM[0].Version);
-    if (![2, 3, 4, 5].includes(version))
+    if (![2, 3, 4, 5, 6].includes(version))
       throw new Error("unsupported-file-version");
     const state = JSON.parse(FlashSCHM.map((row) => row.Data).join(""));
     validateProject(state);
     state.settings.defaultReady ??= DEFAULT_READY;
     state.savedSchedules ??= [];
     state.actorCatalog ??= [];
+    if (version >= 6) {
+      if (Catalogo === undefined) throw new Error("Scheda Catalogo mancante.");
+      state.actorCatalog = parseCatalogRows(Catalogo);
+    }
     if (version >= 3 || (version === 2 && Actors)) {
       let editableRows = Actors;
       if (version === 2) {
@@ -248,6 +254,7 @@ export function serializeRows(state) {
         })),
       ),
     ),
+    Catalogo: serializeCatalogRows(state.actorCatalog),
     Depts: DEPARTMENTS.map((type) => ({
       Reparto: type,
       NumeroProfessionisti: state.professionals[type].length,
@@ -259,7 +266,7 @@ export function serializeRows(state) {
         (order ? 3 - order.order.indexOf(type) : DEPARTMENTS.indexOf(type) + 1),
     })),
     FlashSCHM: (JSON.stringify(state).match(/[\s\S]{1,30000}/g) || []).map(
-      (Data) => ({ Version: 5, Data }),
+      (Data) => ({ Version: 6, Data }),
     ),
   };
 }
@@ -391,26 +398,45 @@ export function validateProject(state) {
     }
   }
 }
-export function readWorkbook(XLSX, buffer) {
-  const workbook = XLSX.read(buffer, { type: "array" }),
-    rows = {};
+function readCatalogSheet(XLSX, sheet) {
+  const header = XLSX.utils.sheet_to_json(sheet, { header: 1 })[0] || [];
+  if (!CATALOG_COLUMNS.every((column) => header.includes(column)))
+    throw new Error(`Catalogo: intestazioni richieste ${CATALOG_COLUMNS.join(", ")}.`);
+  return XLSX.utils.sheet_to_json(sheet, { defval: "" });
+}
+function parseProjectWorkbook(XLSX, workbook) {
+  const rows = {};
   if (!workbook.Sheets.Actors && !workbook.Sheets.FlashSCHM)
     throw new Error("missing-actors-sheet");
   for (const name of ["Actors", "Depts", "FlashSCHM"])
     if (workbook.Sheets[name])
       rows[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: "" });
+  if (workbook.Sheets.Catalogo)
+    rows.Catalogo = readCatalogSheet(XLSX, workbook.Sheets.Catalogo);
   return parseRows(rows);
+}
+export function readWorkbook(XLSX, buffer) {
+  return parseProjectWorkbook(XLSX, XLSX.read(buffer, { type: "array" }));
+}
+export function readImportWorkbook(XLSX, buffer) {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  if (workbook.Sheets.Actors || workbook.Sheets.FlashSCHM)
+    return { kind: "project", state: parseProjectWorkbook(XLSX, workbook) };
+  if (workbook.Sheets.Catalogo)
+    return { kind: "catalog", catalog: parseCatalogRows(
+      readCatalogSheet(XLSX, workbook.Sheets.Catalogo)) };
+  throw new Error("File XLSX non riconosciuto: manca il progetto o il Catalogo.");
 }
 export function writeWorkbook(XLSX, state) {
   const book = XLSX.utils.book_new();
   for (const [name, rows] of Object.entries(serializeRows(state))) {
+    const headers = { Actors: actorColumns, Programmazioni: scheduleColumns, Catalogo: CATALOG_COLUMNS };
     const sheet =
-      (name === "Actors" || name === "Programmazioni") && rows.length === 0
-        ? XLSX.utils.aoa_to_sheet([name === "Actors" ? actorColumns : scheduleColumns])
+      headers[name] && rows.length === 0
+        ? XLSX.utils.aoa_to_sheet([headers[name]])
         : XLSX.utils.json_to_sheet(
             rows,
-            name === "Actors" ? { header: actorColumns } :
-              name === "Programmazioni" ? { header: scheduleColumns } : undefined,
+            headers[name] ? { header: headers[name] } : undefined,
           );
     if (name === "Actors") {
       sheet["!cols"] = [
@@ -432,8 +458,16 @@ export function writeWorkbook(XLSX, state) {
       ];
       if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
     }
+    if (name === "Catalogo") {
+      sheet["!cols"] = [
+        { wch: 38 }, { wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
+      ];
+      if (rows.length) sheet["!autofilter"] = { ref: sheet["!ref"] };
+    }
     XLSX.utils.book_append_sheet(book, sheet, name);
   }
-  book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 0 }, { Hidden: 1 }, { Hidden: 1 }] };
+  book.Workbook = { Sheets: book.SheetNames.map((name) => ({
+    Hidden: ["Depts", "FlashSCHM"].includes(name) ? 1 : 0,
+  })) };
   return book;
 }

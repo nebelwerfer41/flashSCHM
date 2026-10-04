@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { createState, createActor } from '../js/state.js';
+import { serializeRows } from '../js/io/xlsx.js';
 
 // Execute the actual shipped classic script, not just individual source modules.
 class Element {
@@ -19,7 +21,7 @@ class Element {
 }
 const descendants=node=>[node,...node.children.filter(n=>n instanceof Element).flatMap(descendants)];
 function boot(vis, XLSX) {
-  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','defaultReady','applyDefaultReady','readyStatus','generate','export','xlsImportInput','ioStatus','exportStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics','versionName','saveSchedule','versionStatus','versionsEmpty','savedSchedules','catalogCount','catalogImportInput','catalogExport','catalogStatus','catalogPreview','catalogPreviewStatus','catalogPreviewRows','duplicateActionLabel','duplicateAction','applyCatalogImport','cancelCatalogImport','catalogSearch','addCatalogActors','catalogEmpty','catalogList'];
+  const ids=['actorCount','visualization','professionalSettings','globalRules','actorRows','addActor','defaultReady','applyDefaultReady','readyStatus','generate','export','xlsImportInput','ioStatus','exportStatus','scheduleTableBody','showStartEndCheckbox','showProfessionalCheckbox','diagnostics','versionName','saveSchedule','versionStatus','versionsEmpty','savedSchedules','catalogCount','catalogStatus','importPreview','importPreviewStatus','importPreviewRows','duplicateActionLabel','duplicateAction','applyImport','cancelImport','catalogSearch','addCatalogActors','catalogEmpty','catalogList'];
   const nodes=Object.fromEntries(ids.map(id=>[id,new Element('div')]));
   const document={
     createElement:tag=>new Element(tag), getElementById:id=>nodes[id],
@@ -101,11 +103,11 @@ test('catalog import preview requires a collision choice and supports multi-sele
   const XLSX={read:()=>({Sheets:{Catalogo:{}}}),utils:{sheet_to_json:(_sheet,options)=>options?.header===1?[['ID','Nome','DurataTrucco','DurataCapelli','DurataCostumi']]:rows}};
   const nodes=boot(undefined,XLSX);
   const file={arrayBuffer:async()=>new ArrayBuffer(0)};
-  await nodes.catalogImportInput.events.change({target:{files:[file],value:'catalog.xlsx'}});
-  assert.equal(nodes.catalogPreview.hidden,false);
-  assert.equal(nodes.catalogPreviewRows.children.length,2);
-  assert.equal(nodes.applyCatalogImport.disabled,false);
-  nodes.applyCatalogImport.events.click();
+  await nodes.xlsImportInput.events.change({target:{files:[file],value:'catalog.xlsx'}});
+  assert.equal(nodes.importPreview.hidden,false);
+  assert.equal(nodes.importPreviewRows.children.length,2);
+  assert.equal(nodes.applyImport.disabled,false);
+  nodes.applyImport.events.click();
   assert.equal(nodes.catalogCount.textContent,'2');
   nodes.catalogSearch.value='Mario';nodes.catalogSearch.events.input();
   assert.equal(nodes.catalogList.children.length,1);
@@ -117,12 +119,37 @@ test('catalog import preview requires a collision choice and supports multi-sele
   assert.equal(nodes.actorCount.textContent,'2');
   assert.deepEqual(descendants(nodes.actorRows).filter(n=>n.attributes['aria-label']==='Attore').map(n=>n.value),['Mario','Luigi']);
   rows=[{ID:'cast-1',Nome:'Mario Updated',DurataTrucco:30}];
-  await nodes.catalogImportInput.events.change({target:{files:[file],value:'catalog.xlsx'}});
-  assert.equal(nodes.applyCatalogImport.disabled,true);
-  assert.match(nodes.catalogPreviewStatus.textContent,/1 con ID già presente/);
+  await nodes.xlsImportInput.events.change({target:{files:[file],value:'catalog.xlsx'}});
+  assert.equal(nodes.applyImport.disabled,true);
+  assert.match(nodes.importPreviewStatus.textContent,/1 con ID già presente/);
   nodes.duplicateAction.value='replace';nodes.duplicateAction.events.change();
-  assert.equal(nodes.applyCatalogImport.disabled,false);
-  nodes.applyCatalogImport.events.click();
+  assert.equal(nodes.applyImport.disabled,false);
+  nodes.applyImport.events.click();
   assert.equal(descendants(nodes.actorRows).find(n=>n.attributes['aria-label']==='Attore').value,'Mario');
   assert.match(nodes.catalogList.children[0].children[0].children[1].children[0].textContent,/Mario Updated/);
+});
+test('one import control previews a full project before replacing the open plan',async()=>{
+  const imported=createState();
+  imported.actors.push(createActor({name:'Imported'}));
+  imported.actorCatalog=[{id:'cast-1',name:'Catalog actor',durations:{trucco:15,capelli:0,costumi:0}}];
+  const rows=serializeRows(imported);
+  const XLSX={
+    read:()=>({Sheets:Object.fromEntries(Object.keys(rows).map(name=>[name,{name}]))}),
+    utils:{sheet_to_json:(sheet,options)=>options?.header===1
+      ? [['ID','Nome','DurataTrucco','DurataCapelli','DurataCostumi']]
+      : rows[sheet.name]},
+  };
+  const nodes=boot(undefined,XLSX);
+  nodes.addActor.events.click();
+  assert.equal(nodes.actorCount.textContent,'1');
+  const file={arrayBuffer:async()=>new ArrayBuffer(0)};
+  await nodes.xlsImportInput.events.change({target:{files:[file],value:'project.xlsx'}});
+  assert.equal(nodes.importPreview.hidden,false);
+  assert.match(nodes.importPreviewStatus.textContent,/1 schede catalogo/);
+  assert.equal(nodes.catalogCount.textContent,'0');
+  nodes.applyImport.events.click();
+  assert.equal(nodes.importPreview.hidden,true);
+  assert.equal(nodes.catalogCount.textContent,'1');
+  assert.equal(descendants(nodes.actorRows).find(n=>n.attributes['aria-label']==='Attore').value,'Imported');
+  assert.match(nodes.exportStatus.textContent,/Nessuna modifica/);
 });

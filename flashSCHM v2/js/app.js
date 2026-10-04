@@ -9,12 +9,11 @@ import {
 import { generateSchedule } from "./scheduling/scheduler.js";
 import { detectConflicts } from "./scheduling/conflicts.js";
 import { createTimeline } from "./timeline/timeline.js";
-import { readWorkbook, writeWorkbook } from "./io/xlsx.js";
+import { readImportWorkbook, writeWorkbook } from "./io/xlsx.js";
 import { parseTime, formatTime } from "./utils/time.js";
 import { saveSchedule, openSchedule, deleteSchedule } from "./versions.js";
 import {
-  readCatalogWorkbook, writeCatalogWorkbook, catalogImportPreview,
-  applyCatalogImport, addCatalogActorsToPlan,
+  catalogImportPreview, applyCatalogImport, addCatalogActorsToPlan,
 } from "./catalog.js";
 import {
   renderActors,
@@ -29,7 +28,7 @@ export function initApp() {
   let state = createState(),
     stale = false,
     exportPending = true;
-  let pendingCatalog = null;
+  let pendingImport = null;
   const selectedCatalogIds = new Set();
   const $ = (id) => document.getElementById(id);
   let timeline = { render() {} };
@@ -72,17 +71,27 @@ export function initApp() {
     $("catalogEmpty").hidden = visible.length > 0;
     $("catalogEmpty").textContent = state.actorCatalog.length
       ? "Nessun attore corrisponde alla ricerca."
-      : "Il catalogo è vuoto. Esporta un modello XLSX, compilalo e reimportalo.";
+      : "Il catalogo è vuoto. Compila la scheda Catalogo del progetto XLSX e reimportalo.";
     renderCatalogSelection();
   }
-  function renderCatalogPreview() {
-    $("catalogPreview").hidden = !pendingCatalog;
-    if (!pendingCatalog) return;
-    const preview = catalogImportPreview(state.actorCatalog, pendingCatalog);
+  function renderImportPreview() {
+    $("importPreview").hidden = !pendingImport;
+    if (!pendingImport) return;
+    if (pendingImport.kind === "project") {
+      const imported = pendingImport.state;
+      $("importPreviewStatus").textContent =
+        `Progetto completo: ${imported.actors.length} attori nel piano, ${imported.savedSchedules.length} versioni salvate, ${imported.actorCatalog.length} schede catalogo. Applicare sostituisce il progetto aperto.`;
+      $("importPreviewRows").replaceChildren();
+      $("duplicateActionLabel").hidden = true;
+      $("applyImport").disabled = false;
+      $("applyImport").textContent = "Apri progetto";
+      return;
+    }
+    const preview = catalogImportPreview(state.actorCatalog, pendingImport.catalog);
     const duplicates = preview.filter((entry) => entry.status === "existing").length;
-    $("catalogPreviewStatus").textContent =
-      `${preview.length} schede nel file: ${preview.length - duplicates} nuove, ${duplicates} con ID già presente.`;
-    $("catalogPreviewRows").replaceChildren(...preview.map((entry) => {
+    $("importPreviewStatus").textContent =
+      `Catalogo precedente: ${preview.length} schede nel file, ${preview.length - duplicates} nuove e ${duplicates} con ID già presente. Il piano e le versioni rimangono nel progetto aperto.`;
+    $("importPreviewRows").replaceChildren(...preview.map((entry) => {
       const existing = state.actorCatalog.find((item) => item.id === entry.id);
       return el("li", {},
         el("strong", { text: entry.name }),
@@ -93,8 +102,9 @@ export function initApp() {
       );
     }));
     $("duplicateActionLabel").hidden = duplicates === 0;
-    $("applyCatalogImport").disabled = !preview.length ||
+    $("applyImport").disabled = !preview.length ||
       (duplicates > 0 && !$("duplicateAction").value);
+    $("applyImport").textContent = "Importa catalogo";
   }
   function renderExportStatus() {
     $("exportStatus").textContent = exportPending
@@ -234,58 +244,44 @@ export function initApp() {
     $("actorRows").lastElementChild?.querySelector("input")?.focus();
   });
   $("catalogSearch").addEventListener("input", renderCatalog);
-  $("duplicateAction").addEventListener("change", renderCatalogPreview);
-  $("catalogImportInput").addEventListener("change", async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  $("duplicateAction").addEventListener("change", renderImportPreview);
+  $("applyImport").addEventListener("click", () => {
+    if (!pendingImport) return;
     try {
-      if (!globalThis.XLSX)
-        throw new Error("Libreria XLS non disponibile. Verifica la connessione.");
-      pendingCatalog = readCatalogWorkbook(globalThis.XLSX, await file.arrayBuffer());
-      $("duplicateAction").value = "";
-      renderCatalogPreview();
-      $("catalogStatus").textContent = "Controlla l’anteprima e applica l’importazione.";
+      if (pendingImport.kind === "project") {
+        state = pendingImport.state;
+        state.diagnostics ||= [];
+        stale = false;
+        exportPending = false;
+        selectedCatalogIds.clear();
+        renderConfiguration();
+        renderVersions();
+        renderCatalog();
+        renderExportStatus();
+        renderSchedule(true);
+        $("ioStatus").textContent = "Progetto importato: piano, versioni e catalogo disponibili.";
+      } else {
+        const result = applyCatalogImport(
+          state.actorCatalog, pendingImport.catalog, $("duplicateAction").value);
+        state.actorCatalog = result.catalog;
+        selectedCatalogIds.clear();
+        renderCatalog();
+        markDirty();
+        $("ioStatus").textContent =
+          `Catalogo importato: ${result.added} nuove, ${result.replaced} aggiornate, ${result.kept} mantenute. Esporta il progetto XLSX per conservarlo.`;
+      }
+      pendingImport = null;
+      renderImportPreview();
+      $("ioStatus").setAttribute("data-status", "success");
     } catch (error) {
-      pendingCatalog = null;
-      renderCatalogPreview();
-      $("catalogStatus").textContent = `Importazione catalogo non riuscita: ${error.message}`;
-    }
-    event.target.value = "";
-  });
-  $("applyCatalogImport").addEventListener("click", () => {
-    if (!pendingCatalog) return;
-    try {
-      const result = applyCatalogImport(
-        state.actorCatalog, pendingCatalog, $("duplicateAction").value);
-      state.actorCatalog = result.catalog;
-      pendingCatalog = null;
-      selectedCatalogIds.clear();
-      renderCatalogPreview();
-      renderCatalog();
-      markDirty();
-      $("catalogStatus").textContent =
-        `Catalogo aggiornato: ${result.added} nuove, ${result.replaced} aggiornate, ${result.kept} mantenute. Esporta il catalogo XLSX per conservarlo.`;
-    } catch (error) {
-      $("catalogStatus").textContent = error.message;
+      $("ioStatus").setAttribute("data-status", "error");
+      $("ioStatus").textContent = `Importazione non riuscita: ${error.message}`;
     }
   });
-  $("cancelCatalogImport").addEventListener("click", () => {
-    pendingCatalog = null;
-    renderCatalogPreview();
-    $("catalogStatus").textContent = "Importazione catalogo annullata.";
-  });
-  $("catalogExport").addEventListener("click", () => {
-    try {
-      if (!globalThis.XLSX)
-        throw new Error("Libreria XLS non disponibile. Verifica la connessione.");
-      globalThis.XLSX.writeFile(
-        writeCatalogWorkbook(globalThis.XLSX, state.actorCatalog),
-        "flash_schm_catalogo_attori.xlsx",
-      );
-      $("catalogStatus").textContent = "Catalogo XLSX esportato.";
-    } catch (error) {
-      $("catalogStatus").textContent = `Esportazione catalogo non riuscita: ${error.message}`;
-    }
+  $("cancelImport").addEventListener("click", () => {
+    pendingImport = null;
+    renderImportPreview();
+    $("ioStatus").textContent = "Importazione annullata.";
   });
   $("addCatalogActors").addEventListener("click", () => {
     try {
@@ -340,13 +336,13 @@ export function initApp() {
         );
       globalThis.XLSX.writeFile(
         writeWorkbook(globalThis.XLSX, state),
-        "flash_scheduler_export.xlsx",
+        "flash_schm_progetto.xlsx",
         { cellStyles: true },
       );
       exportPending = false;
       renderExportStatus();
       $("ioStatus").setAttribute("data-status", "success");
-      $("ioStatus").textContent = "Esportazione completata.";
+      $("ioStatus").textContent = "Progetto XLSX esportato con piano, versioni e catalogo.";
     } catch (error) {
       $("ioStatus").setAttribute("data-status", "error");
       $("ioStatus").textContent = `Esportazione non riuscita: ${error.message}`;
@@ -360,22 +356,14 @@ export function initApp() {
         throw new Error(
           "Libreria XLS non disponibile. Verifica la connessione.",
         );
-      const imported = readWorkbook(globalThis.XLSX, await file.arrayBuffer());
-      state = imported;
-      state.diagnostics ||= [];
-      stale = false;
-      exportPending = false;
-      renderConfiguration();
-      renderVersions();
-      selectedCatalogIds.clear();
-      pendingCatalog = null;
-      renderCatalogPreview();
-      renderCatalog();
-      renderExportStatus();
-      renderSchedule(true);
+      pendingImport = readImportWorkbook(globalThis.XLSX, await file.arrayBuffer());
+      $("duplicateAction").value = "";
+      renderImportPreview();
       $("ioStatus").setAttribute("data-status", "success");
-      $("ioStatus").textContent = "Importazione completata. Se hai modificato gli orari, genera di nuovo la programmazione.";
+      $("ioStatus").textContent = "File letto. Controlla l’anteprima e applica l’importazione.";
     } catch (error) {
+      pendingImport = null;
+      renderImportPreview();
       $("ioStatus").setAttribute("data-status", "error");
       $("ioStatus").textContent = `Importazione non riuscita: ${error.message}`;
     }
@@ -384,7 +372,7 @@ export function initApp() {
   renderConfiguration();
   renderVersions();
   renderCatalog();
-  renderCatalogPreview();
+  renderImportPreview();
   renderExportStatus();
   try {
     timeline = createTimeline(

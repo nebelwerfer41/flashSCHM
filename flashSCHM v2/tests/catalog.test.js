@@ -74,3 +74,19 @@ test("older project metadata receives an empty catalog", () => {
   rows.FlashSCHM[0].Data = JSON.stringify(metadata);
   assert.deepEqual(parseRows(rows).actorCatalog, []);
 });
+
+test("version 6 Catalogo sheet edits override metadata and require valid IDs", () => {
+  const state = createState();
+  state.actorCatalog = parseCatalogRows([rows[0]]);
+  const workbookRows = serializeRows(state);
+  assert.equal(workbookRows.FlashSCHM[0].Version, 6);
+  workbookRows.Catalogo[0].Nome = "Edited in spreadsheet";
+  assert.equal(parseRows(workbookRows).actorCatalog[0].name, "Edited in spreadsheet");
+  workbookRows.Catalogo.push({ ...workbookRows.Catalogo[0] });
+  assert.throws(() => parseRows(workbookRows), /ID duplicato/);
+  workbookRows.Catalogo.pop();
+  delete workbookRows.Catalogo;
+  assert.throws(() => parseRows(workbookRows), /Scheda Catalogo mancante/);
+  workbookRows.FlashSCHM[0].Version = 5;
+  assert.deepEqual(parseRows(workbookRows).actorCatalog, state.actorCatalog);
+});

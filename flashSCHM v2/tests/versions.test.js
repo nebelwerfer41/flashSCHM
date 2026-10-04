@@ -54,7 +54,7 @@ test("Programmazioni contains one readable row per saved activity and import kee
   actor.arrival = generated.arrival;
   const version = saveSchedule(state, "Piano A", "2026-10-03T10:00:00.000Z");
   const rows = serializeRows(state);
-  assert.equal(rows.FlashSCHM[0].Version, 5);
+  assert.equal(rows.FlashSCHM[0].Version, 6);
   assert.equal(rows.Programmazioni.length, 2);
   assert.deepEqual(rows.Programmazioni.map((row) => row.Reparto), actor.schedule.map((task) => task.type));
   assert.equal(rows.Programmazioni[0].IDVersione, version.id);

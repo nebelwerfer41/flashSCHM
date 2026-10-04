@@ -34,11 +34,21 @@ L'export XLSX aggiunge una sola scheda visibile `Programmazioni`, con una riga p
 
 **Stato: completato.**
 
+**Nota successiva:** il file di catalogo separato descritto qui è stato sostituito dal progetto XLSX unico nella fase 3.1. I vecchi file di solo catalogo restano importabili.
+
 **Risultato:** importare un file XLSX di catalogo, cercare e selezionare più attori, aggiungerli al piano con il READY predefinito. Il catalogo registra almeno un ID stabile, nome e durate abituali. Una funzione di export permette di aggiornare e conservare il catalogo come file separato.
 
 **Interventi:** distinguere l'ID della scheda catalogo dall'ID dell'attore nel piano; mostrare un'anteprima dell'importazione e gestire gli ID duplicati prima di applicarla. Le regole specifiche e i valori aggiuntivi si aggiungono solo quando emerge un caso concreto.
 
 **Verifica:** importare due volte non crea duplicati silenziosi; un attore aggiunto al piano conserva le proprie modifiche anche se il catalogo viene aggiornato; un catalogo esportato si reimporta senza perdere gli ID.
+
+## 3.1. Import/export XLSX unificato
+
+**Stato: completato.**
+
+**Risultato:** un solo controllo di importazione e uno di esportazione. L'XLSX esportato contiene il piano corrente, le versioni salvate e il catalogo; `Actors`, `Programmazioni` e `Catalogo` sono schede visibili. Il progetto completo si apre dopo un'anteprima. Le modifiche alla scheda `Catalogo` sono applicate all'importazione. I precedenti file di solo catalogo si importano dallo stesso controllo, con la scelta esplicita per gli ID già presenti; non si esportano più file separati.
+
+**Verifica:** round trip del progetto completo e del catalogo modificato con SheetJS, importazione dei formati precedenti, interfaccia funzionante tramite `file://` e nessuna perdita silenziosa di versioni o schede.
 
 ## 4. Esperimenti di scheduling
 
