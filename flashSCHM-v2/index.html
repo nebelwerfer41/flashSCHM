@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flash SCHM · Programmazione reparti</title>
+  <link rel="stylesheet" href="https://unpkg.com/vis-timeline@7.7.3/styles/vis-timeline-graph2d.min.css" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Vai agli attori</a>
+  <header class="app-header">
+    <div class="brand"><span class="eyebrow">ADs TOOLS · PIANIFICAZIONE REPARTI</span><h1>Flash <span>SCHM</span></h1><p>Scheduler for Costume, Hair and Make-up</p></div>
+    <div class="project-actions">
+      <div class="io-row"><label class="import-button" for="xlsImportInput">Importa XLSX<input class="file-input" type="file" id="xlsImportInput" accept=".xls,.xlsx" /></label><button id="export" type="button">Esporta XLSX</button></div>
+      <p id="ioStatus" role="status" aria-live="polite" aria-atomic="true">Un XLSX conserva piano, versioni e catalogo.</p>
+      <p id="exportStatus" role="status" aria-live="polite"></p>
+    </div>
+  </header>
+  <main id="main">
+    <section id="importPreview" class="panel import-preview" aria-labelledby="importPreviewTitle" hidden>
+      <h2 id="importPreviewTitle">Anteprima importazione</h2>
+      <p id="importPreviewStatus"></p>
+      <ul id="importPreviewRows" class="catalog-list"></ul>
+      <label id="duplicateActionLabel" for="duplicateAction">ID catalogo già presenti<select id="duplicateAction"><option value="">Scegli come gestirli</option><option value="replace">Aggiorna le schede esistenti</option><option value="keep">Mantieni le schede esistenti</option></select></label>
+      <div class="import-actions"><button id="applyImport" type="button">Applica importazione</button><button id="cancelImport" type="button">Annulla</button></div>
+    </section>
+    <section class="panel actors-panel" aria-labelledby="actorsTitle">
+      <div class="section-header"><div><span class="eyebrow">01 / CONFIGURAZIONE</span><h2 id="actorsTitle">Attori <span id="actorCount" class="count">0</span></h2><p>Imposta l’orario READY e le durate. Con 0 minuti il reparto viene saltato.</p></div><button id="addActor" type="button">+ Aggiungi attore</button></div>
+      <div class="ready-default">
+        <label for="defaultReady">READY predefinito<input id="defaultReady" type="time" required aria-describedby="defaultReadyHelp" /></label>
+        <button id="applyDefaultReady" type="button">Applica a tutti</button>
+        <p id="defaultReadyHelp">Usato per i nuovi attori. “Applica a tutti” sostituisce i READY individuali.</p>
+      </div>
+      <p id="readyStatus" class="ready-status" role="status" aria-live="polite"></p>
+      <div id="actorRows"></div>
+    </section>
+    <section class="panel catalog-panel" aria-labelledby="catalogTitle">
+      <div class="section-header"><div><span class="eyebrow">CATALOGO</span><h2 id="catalogTitle">Catalogo attori <span id="catalogCount" class="count">0</span></h2><p>Nomi e durate abituali sono nella scheda Catalogo del progetto XLSX. Gli attori aggiunti al piano restano indipendenti.</p></div></div>
+      <p id="catalogStatus" role="status" aria-live="polite"></p>
+      <div class="catalog-picker"><label for="catalogSearch">Cerca nel catalogo<input id="catalogSearch" type="search" placeholder="Nome o ID" /></label><button id="addCatalogActors" type="button" disabled>Aggiungi selezionati al piano</button></div>
+      <p id="catalogEmpty">Il catalogo è vuoto. Compila la scheda Catalogo del progetto XLSX e reimportalo.</p>
+      <ul id="catalogList" class="catalog-list"></ul>
+    </section>
+    <div class="configuration-grid">
+      <section class="panel" aria-labelledby="professionalsTitle"><details open><summary><h2 id="professionalsTitle">Professionisti</h2><span class="summary-hint">Capacità dei reparti</span></summary><p class="section-help">Aggiungi i professionisti per limitarne la disponibilità. Senza nomi, il reparto ha capacità libera.</p><div id="professionalSettings" class="professional-grid"></div></details></section>
+      <section class="panel" aria-labelledby="rulesTitle"><details><summary><h2 id="rulesTitle">Regole globali</h2><span class="summary-hint">Preferenze e vincoli</span></summary><p class="section-help">“Preferisci” ammette alternative. “Richiedi” impone un vincolo. Le regole si applicano a tutti gli attori, salvo eccezioni.</p><div id="globalRules"></div></details></section>
+    </div>
+    <div class="generation-bar"><div><strong>Pronto a organizzare la giornata?</strong><span>Generando sostituisci anche le modifiche manuali.</span></div><button id="generate" type="button" class="primary">Genera programmazione <span aria-hidden="true">→</span></button></div>
+    <section id="scheduleContainer" class="panel results-panel" aria-labelledby="scheduleTitle">
+      <div class="section-header"><div><span class="eyebrow">02 / PROGRAMMAZIONE</span><h2 id="scheduleTitle">Piano di lavoro</h2></div><div class="table-options" aria-label="Opzioni tabella"><label for="showStartEndCheckbox"><input type="checkbox" id="showStartEndCheckbox" /> Inizio e fine</label><label for="showProfessionalCheckbox"><input type="checkbox" id="showProfessionalCheckbox" /> Professionista assegnato</label></div></div>
+      <div id="diagnostics" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="table-scroll" role="region" aria-label="Tabella della programmazione, scorrimento orizzontale" tabindex="0"><table id="scheduleTable"><caption class="sr-only">Orari di arrivo, attività per reparto e READY per ogni attore</caption><thead><tr><th scope="col">Attore</th><th scope="col">Arrivo</th><th scope="col" class="department-trucco">Trucco</th><th scope="col" class="department-capelli">Capelli</th><th scope="col" class="department-costumi">Costumi</th><th scope="col">READY</th></tr></thead><tbody id="scheduleTableBody"></tbody></table></div>
+    </section>
+    <section class="panel timeline-panel" aria-labelledby="timelineTitle"><div class="section-header"><div><h2 id="timelineTitle">Timeline reparti</h2><p>Seleziona un’attività per evidenziare l’attore. Trascina o ridimensiona per modificare gli orari.</p></div><ul class="legend" aria-label="Legenda reparti"><li class="department-trucco">Trucco</li><li class="department-capelli">Capelli</li><li class="department-costumi">Costumi</li><li class="legend-conflict">! Conflitto</li></ul></div><details class="timeline-help"><summary>Comandi da tastiera</summary><p>Tab per raggiungere un’attività, Invio per evidenziare l’attore. ← / → sposta di 5 minuti; Maiusc + ← / → modifica la fine. ↑ / ↓ cambia professionista nello stesso reparto.</p></details><div id="visualization" role="region" aria-label="Timeline interattiva dei reparti"></div></section>
+    <section class="panel versions-panel" aria-labelledby="versionsTitle">
+      <div class="section-header"><div><span class="eyebrow">03 / VERSIONI</span><h2 id="versionsTitle">Programmazioni salvate</h2><p>Ogni versione conserva una copia indipendente del piano. Esporta l’XLSX per conservarla oltre questa sessione.</p></div></div>
+      <div class="version-save"><label for="versionName">Nome della versione<input id="versionName" type="text" maxlength="100" placeholder="Es. Piano mattina" /></label><button id="saveSchedule" type="button">Salva programmazione</button></div>
+      <p id="versionStatus" role="status" aria-live="polite"></p>
+      <p id="versionsEmpty">Nessuna versione salvata.</p>
+      <ul id="savedSchedules" class="version-list"></ul>
+    </section>
+    <footer class="app-footer" aria-label="Informazioni su Flash SCHM">
+      <span class="footer-product"><strong>Flash SCHM</strong><span class="app-version">Versione 2</span></span>
+      <span>Programmazione Trucco · Capelli · Costumi</span>
+      <span>ADs Tools · Realizzato da EME</span>
+    </footer>
+  </main>
+  <script src="https://unpkg.com/vis-timeline@7.7.3/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <script src="app.bundle.js"></script>
+</body>
+</html>
