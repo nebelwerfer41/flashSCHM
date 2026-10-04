@@ -11,6 +11,7 @@ import {
   selectProfessional,
   reserveProfessional,
 } from "./professionals.js";
+import { rebalanceOpening } from "./rebalance.js";
 
 function scheduleCandidate(
   actor,
@@ -191,10 +192,13 @@ export function generateSchedule({
       );
     }
   }
-  return {
-    success: diagnostics.length === 0,
-    actors: result,
-    professionalSchedules,
-    diagnostics,
-  };
+  return rebalanceOpening(
+    {
+      success: diagnostics.length === 0,
+      actors: result,
+      professionalSchedules,
+      diagnostics,
+    },
+    { professionals, rules },
+  );
 }

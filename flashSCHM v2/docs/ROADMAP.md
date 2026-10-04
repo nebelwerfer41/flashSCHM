@@ -50,15 +50,15 @@ L'export XLSX aggiunge una sola scheda visibile `Programmazioni`, con una riga p
 
 **Verifica:** round trip del progetto completo e del catalogo modificato con SheetJS, importazione dei formati precedenti, interfaccia funzionante tramite `file://` e nessuna perdita silenziosa di versioni o schede.
 
-## 4. Esperimenti di scheduling
+## 4. Orario della prima attività
 
-**Prima decisione:** definire cosa misuriamo con “tempo di preparazione in testa”: intervallo tra la prima attività e READY, attesa tra attività, oppure un'altra misura. Fissare anche il ruolo della priorità attore nel confronto.
+**Stato: completata la prima correzione.** La ricerca resta limitata per mantenere l'interfaccia reattiva; il risultato non costituisce una prova di ottimalità per ogni progetto.
 
-**Risultato:** mantenere l'algoritmo attuale come riferimento e aggiungere una strategia sperimentale selezionabile. Confrontare sui medesimi casi fattibilità, attesa media, attesa massima e tempo di calcolo. Le versioni salvate consentono di conservare i risultati dei tentativi.
+**Decisione:** tra le programmazioni valide, posticipare il più possibile la prima attività dell'intero piano è il criterio principale e assoluto. L'apertura del campo base e le convocazioni sono calcolate fuori da Flash SCHM; la prima attività è il dato utile a quel lavoro. Solo a parità di questo orario si riduce l'anticipo non produttivo dei singoli attori, pesato con la priorità già impostata (1 pesa più di 2). Per un attore l'anticipo è `READY − prima attività − somma delle durate`: comprende pause tra reparti e tempo libero prima del READY. I vincoli obbligatori restano inderogabili.
 
-**Interventi:** costruire un piccolo insieme di casi rappresentativi, separare punteggio e vincoli, poi provare ordini degli attori e assegnazioni dei professionisti diversi. Valutare un solver più complesso solo se i casi mostrano un beneficio che giustifica il costo.
+**Risultato:** il generatore conserva la ricerca esistente per ottenere un piano valido e può riconsiderare ordini, orari e professionisti degli attori già collocati. Non è stata aggiunta una strategia selezionabile. La ricerca aggiuntiva usa un limite deterministico di tentativi; se lo esaurisce, conserva il miglior piano valido trovato, senza dichiarare impossibili miglioramenti ulteriori.
 
-**Verifica:** nessuna sovrapposizione o violazione dei vincoli obbligatori; risultati riproducibili; confronto numerico con l'algoritmo attuale sui casi concordati.
+**Verifica:** nel progetto di esempio con Marta e costumi obbligatori per ultimi, la prima attività passa dalle 06:30 dell'output precedente alle 06:45 della soluzione manuale; i 15 minuti di anticipo non produttivo di Marta diventano zero. Verificare anche assenza di sovrapposizioni, rispetto dei vincoli, riproducibilità e tempo di calcolo su piani più grandi.
 
 ## 5. Collegamento futuro con Flash Suite
 

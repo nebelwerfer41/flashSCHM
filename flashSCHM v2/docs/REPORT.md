@@ -1,5 +1,13 @@
 # Refactoring and verification report
 
+## Roadmap phase 4: earliest activity
+
+The scheduling decision is now lexicographic: postpone the earliest activity of the whole plan first, then reduce each actor's nonproductive anticipation weighted by actor priority, then favor department order preferences. The existing READY-anchored placement supplies a valid fallback. A bounded deterministic reassignment can change previously placed actors' times, order and professionals while preserving required rules and availability. There is no user-facing strategy selector. The search budget limits claims of global optimality on larger plans.
+
+The supplied four-actor XLSX reproduces the issue: the previous automatic result began at 06:30, while the corrected generator begins at 06:45. Marta's required Costume-last rule holds, all four actors have zero nonproductive anticipation, and conflict detection reports none. The generated order need not match the manual version's exact professional choices. Regression tests also cover a required professional whose conflict can be removed by reassigning another actor, and an improvement in actor anticipation when the opening is already fixed.
+
+Verification: the 56-test Node suite passes, the rebuilt classic-script bundle loads from `file://` in Chrome, and the supplied XLSX project data produces the same 06:45 result when passed through the scheduling core. A bounded search can still stop before proving that no later opening exists on a larger plan.
+
 ## Roadmap phase 3.1: unified XLSX
 
 The app now exports one project XLSX with visible `Actors`, `Programmazioni` and `Catalogo` sheets. The single import control previews full project replacement and accepts earlier catalog-only files for migration, with the existing explicit ID collision choice. Project format 6 applies visible catalog edits while preserving rules, manual schedules and saved versions in metadata. Tests cover full project round trips, edited catalog cells, old catalog-only imports and the direct-file bundle.

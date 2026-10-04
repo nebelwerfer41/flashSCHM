@@ -9,6 +9,7 @@
 | `utils/time.js` | Integer-minute arithmetic, explicit parsing/formatting/rounding, interval overlap, actual arrival |
 | `scheduling/rules.js` | Additive inheritance, normalization, consistency, candidate validation and scoring |
 | `scheduling/scheduler.js` | Pure READY-anchored scheduling and structured results |
+| `scheduling/rebalance.js` | Bounded global reassignment to postpone the first activity |
 | `scheduling/professionals.js` | Separate pure availability, available set, selection and explicit reservation |
 | `scheduling/conflicts.js` | Domain conflicts and manual schedule edits |
 | `ui/` | DOM rendering and rule controls; human-readable Italian diagnostics |
@@ -18,7 +19,7 @@
 
 ## State boundaries
 
-State is `{actors, professionals, settings, rules, diagnostics, savedSchedules, actorCatalog}`. Catalog entries have `{id, name, durations}`. Adding one to the plan creates a distinct actor ID and stores its catalog ID as `catalogId`; its name and durations are copied. Saved plan snapshots omit the catalog and reopen with the project's current catalog. `settings.defaultReady` is the READY assigned to new actors; the explicit **Applica a tutti** action copies it into existing actors. Each actor keeps an independent `ready` value, so changing the default alone does not alter a generated schedule. Professionals are arrays per department of `{id, name}`. Their order is the explicit fallback selection order. Actor priority and READY determine actor scheduling order, not row position or UUID ordering.
+State is `{actors, professionals, settings, rules, diagnostics, savedSchedules, actorCatalog}`. Catalog entries have `{id, name, durations}`. Adding one to the plan creates a distinct actor ID and stores its catalog ID as `catalogId`; its name and durations are copied. Saved plan snapshots omit the catalog and reopen with the project's current catalog. `settings.defaultReady` is the READY assigned to new actors; the explicit **Applica a tutti** action copies it into existing actors. Each actor keeps an independent `ready` value, so changing the default alone does not alter a generated schedule. Professionals are arrays per department of `{id, name}`. Their order is the explicit fallback selection order. Actor priority and READY determine the initial placement order; priority also weights individual nonproductive anticipation in the global reassignment.
 
 Actors contain `{id, name, ready, priority, tasks, rules, schedule, arrival}`. Each source task contains `{id, actorId, type, duration}`. Zero-duration source tasks retain IDs but are omitted from scheduling. A scheduled task adds `{start, end, professionalId}`. Names are rendered through `textContent`; they are never parsed for identity.
 
@@ -35,10 +36,11 @@ Manual edits mutate only the identified scheduled task, then recalculate arrival
 5. Reject required-order violations; rank preferences.
 6. Test backwards placement against professional reservations and actor non-overlap.
 7. Check hard ordering again against actual chronological placement.
-8. Compare actual arrivals, retaining preference rank on ties; commit only the chosen schedule.
-9. Return structured results and diagnostics.
+8. Compare actual arrivals, retaining preference rank on ties; commit only the chosen initial schedule.
+9. Search bounded global reassignments at progressively earlier opening thresholds. The opening time dominates individual anticipation, which is weighted by actor priority; department order preferences break remaining ties.
+10. Return structured results and diagnostics.
 
-The latest-arrival comparison is the review-requested correction to legacy first-feasible acceptance. Other actors' committed reservations are read-only during candidate trials; no full-project deep cloning is used.
+The initial placement supplies a valid fallback. Global reconsideration uses temporary reservations and may alter previously placed actors. Its deterministic node budget limits runtime; a budget-limited result is not an optimality certificate.
 
 ## Time and limitations
 

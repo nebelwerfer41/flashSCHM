@@ -61,7 +61,7 @@ Example, one makeup artist, one hairdresser, free Costume, 15 minutes each, READ
 | Mario | 09:15 | 09:15–09:30 | 09:30–09:45 | 09:45–10:00 |
 | Luigi | 09:15 | 09:30–09:45 | 09:15–09:30 | 09:45–10:00 |
 
-This is a bounded sequential scheduler, not a global optimizer. It does not reconsider already accepted actors or exhaustively search every possible gap arrangement. A failure means no solution was found by this bounded search, not a proof that no conceivable schedule exists.
+The generator now also performs bounded global reassignment when it can postpone the earliest activity or reduce individual nonproductive anticipation at the same opening. It can change previously accepted actors' orders, times and professionals. The opening time is the strict first criterion; actor priority weights anticipation only after that time is fixed. The search has a deterministic node limit, so an unchanged plan or scheduling failure does not prove that no better or feasible plan exists.
 
 ## Tests
 

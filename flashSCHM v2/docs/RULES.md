@@ -31,7 +31,7 @@ Required constraints determine validity; they never become large preference pena
 
 Preferred partial relations contribute one penalty per violated normalized edge. Preferred complete orders use weighted positions, preserving the default legacy department priority ranking and ties. Imported nonstandard numeric priorities retain their original weights in `legacyWeights`; new UI rules use semantic orders. Equal scores retain permutation enumeration order: canonical Makeup/Hair/Costume recursion.
 
-Following review, the feasible schedule with the latest actual arrival is chosen first. Preference ranking breaks equal-arrival ties. This avoids choosing an earlier call merely to retain a soft sequence. Hard requirements remain absolute.
+Within the initial READY-anchored placement, the feasible schedule with the latest actual arrival is chosen first. A bounded global reconsideration can then change earlier actors' assignments. Its strict first criterion is the latest possible start of the earliest activity in the whole plan. At the same opening, it minimizes `READY - first activity - total task duration`, weighted by inverse actor priority; remaining ties favor department order preferences. A search budget preserves responsiveness, so failure to improve does not prove global optimality. Hard requirements remain absolute.
 
 Professional selection first restricts to required IDs, if present. Otherwise it prefers available professionals matching the most preferred rules, with configured professional order breaking ties. A preference may fall back at the same slot. A requirement searches earlier for that professional and never falls back. A missing required ID fails, even in a free-capacity department.
 

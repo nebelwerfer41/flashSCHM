@@ -109,8 +109,12 @@ test("preferred professional falls back; required professional shifts earlier", 
   );
   b.rules.add[0].strength = "required";
   r = generateSchedule(s);
-  assert.equal(r.actors[1].arrival, 540);
+  assert.deepEqual(r.actors.map((item) => item.arrival), [570, 570]);
   assert.equal(r.actors[1].schedule[0].professionalId, p.id);
+  assert.equal(
+    r.actors[0].schedule[0].professionalId,
+    s.professionals.trucco[1].id,
+  );
 });
 test("missing required professional fails structurally, including zero-capacity department", () => {
   const a = actor([0, 0, 30]);
@@ -431,6 +435,53 @@ test("Mario and Luigi share Costume and alternate Makeup/Hair without an earlier
   assert.deepEqual(
     r.actors[1].schedule.map((t) => t.type),
     ["capelli", "trucco", "costumi"],
+  );
+  assert.deepEqual(detectConflicts(r.actors, s.rules), []);
+});
+test("global reassignment keeps the first activity at 06:45 when Marta requires Costume last", () => {
+  const s = input([
+    actor([15, 15, 15], { name: "Mario", ready: 480 }),
+    actor([15, 15, 15], { name: "Luigi", ready: 480 }),
+    actor([30, 30, 15], { name: "Marta", ready: 480 }),
+    actor([30, 15, 20], { name: "Marghe", ready: 480 }),
+  ]);
+  s.rules = [rule("last", { department: "costumi", strength: "preferred" })];
+  s.actors[2].rules.disabled = [s.rules[0].id];
+  s.actors[2].rules.add = [rule("last", { department: "costumi" })];
+  const original = structuredClone(s);
+  const r = generateSchedule(s);
+  assert.equal(r.success, true);
+  assert.equal(Math.min(...r.actors.map((item) => item.arrival)), 405);
+  assert.equal(r.actors.find((item) => item.name === "Marta").arrival, 405);
+  assert.equal(
+    r.actors.find((item) => item.name === "Marta").schedule.at(-1).type,
+    "costumi",
+  );
+  for (const item of r.actors) {
+    const duration = item.tasks.reduce((sum, task) => sum + task.duration, 0);
+    assert.equal(item.ready - item.arrival - duration, 0);
+  }
+  assert.deepEqual(detectConflicts(r.actors, s.rules), []);
+  assert.deepEqual(s, original);
+  assert.deepEqual(generateSchedule(s), r);
+});
+test("the same opening still permits a better professional assignment", () => {
+  const fixed = actor([0, 0, 75], { name: "Fixed", ready: 480 });
+  const flexible = actor([30, 0, 0], { name: "Flexible", ready: 480 });
+  const required = actor([30, 0, 0], { name: "Required", ready: 480 });
+  const s = input([fixed, flexible, required]);
+  required.rules.add = [
+    rule("professional", {
+      department: "trucco",
+      professionalId: s.professionals.trucco[0].id,
+    }),
+  ];
+  const r = generateSchedule(s);
+  assert.equal(Math.min(...r.actors.map((item) => item.arrival)), 405);
+  assert.deepEqual(r.actors.map((item) => item.arrival), [405, 450, 450]);
+  assert.equal(
+    r.actors[1].schedule[0].professionalId,
+    s.professionals.trucco[1].id,
   );
   assert.deepEqual(detectConflicts(r.actors, s.rules), []);
 });
